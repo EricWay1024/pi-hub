@@ -30,11 +30,9 @@ export function UsageMeter({ agent, connected, request }: { agent: AgentState; c
   const valid = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
   const knownContext = valid(context?.tokens) && valid(context?.contextWindow) && context.contextWindow > 0;
   const percent = knownContext ? context.tokens / context.contextWindow * 100 : undefined;
-  const cost = valid(stats?.cost) ? stats.cost : undefined;
   const stale = !connected || !agent.online || !!error;
-  return <div className={'usage-meter' + (stale ? ' stale' : '')} aria-label="Context usage and estimated session cost">
+  return <div className={'usage-meter' + (stale ? ' stale' : '')} aria-label="Context usage">
     <span className={percent !== undefined && percent >= 85 ? 'usage-high' : ''} title="Estimated current context, not cumulative session tokens. Unknown after compaction until the next model response.">Context {agent.online && agent.compaction ? agentStatus(agent).toLowerCase() : knownContext ? `${percent!.toFixed(1)}% · ${count.format(context.tokens)} / ${count.format(context.contextWindow)}` : valid(context?.contextWindow) && context.contextWindow > 0 ? `unknown / ${count.format(context.contextWindow)}` : '—'}</span>
-    <span title={`Pi-reported cumulative session estimate in USD, including recorded summaries and tool usage. Not an actual provider bill.${stats?.tokens ? ` Tokens: ${stats.tokens.input} input, ${stats.tokens.output} output, ${stats.tokens.cacheRead} cache read, ${stats.tokens.cacheWrite} cache write.` : ''}`}>Session estimate {cost === undefined ? '—' : cost > 0 && cost < 0.0001 ? '< $0.0001' : `$${cost.toFixed(4)}`} USD</span>
     {(error || stale) && <span className="usage-note">{error || 'Offline · last reported'}</span>}
   </div>;
 }
