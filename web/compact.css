@@ -27,6 +27,9 @@
 .app .tool-card { margin: 8px 0; padding: 10px 12px; }
 .app .tool-card-heading, .app .report-heading, .app .activity-card-heading { gap: 8px; margin-bottom: 5px; }
 .app .tool-path { margin: 4px 0 6px; }
+.app .tool-card-heading { align-items: baseline; }
+.app .tool-card-heading > strong, .app .tool-card-heading > .result-status { flex-shrink: 0; }
+.app .tool-card-heading > .tool-path { flex: 1; min-width: 0; margin: 0; }
 .app .tool-subtitle { margin: 4px 0; }
 .app .tool-card pre, .app .activity-card pre { margin: 6px 0; padding: 9px; }
 .app .tool-output { padding-top: 6px; margin-top: 7px; }

@@ -49,8 +49,7 @@ export function ToolCard({ name, args = {}, result, execution, compact = false }
   const known = ['bash','read','write','edit','apply_patch'].includes(view.kind);
   const metadata = Object.fromEntries(Object.entries(output?.details || {}).filter(([key]) => !['patch','diff','exitCode','fullOutputPath'].includes(key)));
   return <section className={'tool-card ' + status + (compact ? ' compact-tool' : '')}>
-    <div className="tool-card-heading"><strong>{view.title}</strong><span className={'result-status ' + status}>{status === 'pending' ? 'Queued' : status === 'done' ? 'Done' : status === 'running' ? 'Running' : 'Error'}</span></div>
-    {view.path && <code className="tool-path">{view.path}</code>}
+    <div className="tool-card-heading"><strong>{view.title}</strong>{view.path && <code className="tool-path">{view.path}</code>}<span className={'result-status ' + status}>{status === 'pending' ? 'Queued' : status === 'done' ? 'Done' : status === 'running' ? 'Running' : 'Error'}</span></div>
     {view.command && <OutputText text={view.command} code compact={true}/>}
     {view.agent && <p className="tool-subtitle">{view.agent}{view.action ? ` · ${view.action}` : ''}</p>}
     {inputContent && <p className="tool-subtitle">{inputContent.split('\n').length} lines written</p>}

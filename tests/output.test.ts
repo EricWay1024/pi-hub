@@ -58,6 +58,13 @@ test('brief reasoning is shown directly while longer reasoning remains expandabl
   assert.ok(!render(' \n\u200b').includes('reasoning-brief'));
 });
 
+test('file tool headers keep title, path and status together', () => {
+  for (const name of ['edit', 'read', 'write']) {
+    const html = renderToStaticMarkup(createElement(ToolCard, { name, args: { path: 'tests/output.test.ts' }, result: { content: [] } }));
+    assert.match(html, /class="tool-card-heading"><strong>[^<]+<\/strong><code class="tool-path">tests\/output\.test\.ts<\/code><span class="result-status done">Done<\/span><\/div>/);
+  }
+});
+
 test('structured outputs are readable fields rather than raw JSON and edits show highlighted diffs', () => {
   const html = renderToStaticMarkup(createElement(ToolCard, { name: 'subagent', args: { agent: 'reviewer' }, result: { content: [{ type: 'text', text: '{"agent":"reviewer","status":"complete","summary":"**Proof checked**","exitCode":0}' }] } }));
   assert.ok(html.includes('subagent-report')); assert.ok(html.includes('Proof checked')); assert.ok(html.includes('Exit Code') || html.includes('Exit code'));
