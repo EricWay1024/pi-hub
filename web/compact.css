@@ -1,0 +1,71 @@
+/* Reduce whitespace, not text size; keep touch controls usable on phones. */
+.app .sidebar { padding: 16px 12px 12px; }
+.app .brand { gap: 10px; padding: 0 8px 16px; }
+.app .connection { padding: 0 10px 14px; }
+.app .new-agent { margin-bottom: 16px; }
+.app .section-title { padding: 0 10px 6px; }
+.app .agent-item { padding: 9px 10px; margin: 3px 0; }
+.app .agent-item small { margin-top: 4px; }
+.app .sidebar footer { padding: 10px 6px 0; }
+.app .sidebar footer button { margin-top: 4px; }
+.app header { min-height: 64px; padding: 12px 20px; gap: 10px; }
+.app header h2 { margin-bottom: 3px; }
+.app .header-actions { gap: 12px; }
+.app .workspace-heading { gap: 8px; }
+.app .content { position: relative; }
+.app .transcript { padding: 18px 24px 12px; }
+.app .message { line-height: 1.65; }
+.app .message p { margin-bottom: 8px; }
+.app .message p:last-child { margin-bottom: 0; }
+.app .message ul, .app .message ol { margin: 6px 0; padding-left: 24px; }
+.app .message blockquote { margin: 8px 0; padding-left: 12px; }
+.app .agent-turn { padding: 8px 0 12px; }
+.app .agent-turn .message { padding-bottom: 8px; }
+.app .agent-turn .message-row:last-child .message { padding-bottom: 0; }
+.app .turn-label { margin-bottom: 7px; }
+.app .user-turn { margin: 8px 0 14px; padding: 12px 16px; }
+.app .tool-card { margin: 8px 0; padding: 10px 12px; }
+.app .tool-card-heading, .app .report-heading, .app .activity-card-heading { gap: 8px; margin-bottom: 5px; }
+.app .tool-path { margin: 4px 0 6px; }
+.app .tool-subtitle { margin: 4px 0; }
+.app .tool-card pre, .app .activity-card pre { margin: 6px 0; padding: 9px; }
+.app .tool-output { padding-top: 6px; margin-top: 7px; }
+.app .tool-input { margin-top: 6px; }
+.app .formatted-output { line-height: 1.65; }
+.app .output-text .formatted-output p { margin: 4px 0 6px; }
+.app .structured-output dl > div { padding: 5px 0; gap: 8px; }
+.app .output-list { gap: 6px; }
+.app .output-list-item { padding: 6px 8px; }
+.app .thinking { padding: 7px 10px; margin: 7px 0; }
+.app .message-queue { padding: 10px 0; }
+.app .queued-message { padding: 11px 14px; margin: 7px 0; }
+.app .queued-message-label { margin-bottom: 6px; }
+.app .queued-message p { margin-bottom: 6px; }
+.app .working { margin: 12px 0; }
+.app .history-controls { gap: 8px; padding: 4px 0 14px; margin-bottom: 10px; }
+.app .composer { padding: 10px 20px 12px; }
+.app .composer-box { padding: 9px; }
+.app .composer textarea { min-height: 54px; padding: 6px; }
+.app .composer small { margin-top: 6px; }
+.app .activity { padding: 16px 14px; }
+.app .activity h3 { margin-bottom: 0; }
+.app .activity h4 { margin: 16px 0 8px; }
+.app .activity label { margin: 10px 0; }
+.app .activity .path { margin-bottom: 12px; }
+.app .activity-card { padding: 8px 0; }
+.app .command-menu-heading { padding: 8px 10px; }
+.app .command-option { padding: 8px 10px; }
+.app .command-menu-footer { padding: 7px 10px; }
+@media (max-width: 760px) {
+  .app header { min-height: 62px; padding: 10px 12px; }
+  .app .header-actions { gap: 6px; }
+  .app .transcript { padding: 12px; }
+  .app .user-turn { padding: 10px 12px; }
+  .app .tool-card { padding: 9px 10px; }
+  .app .composer { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+  .app .composer-box { padding: 7px; }
+  .app .composer .row { gap: 6px; }
+  .app .composer button { padding: 6px 8px; white-space: nowrap; }
+  .app .activity { top: 0; bottom: 0; }
+  .app button:not(.command-option), .app .tool-input > summary { min-height: 36px; }
+}
