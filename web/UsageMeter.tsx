@@ -28,12 +28,11 @@ export function UsageMeter({ agent, connected, request }: { agent: AgentState; c
   }, [agent.id, agent.sessionId, agent.sessionFile, agent.busy, agent.compaction?.startedAt, agent.model, agent.totalMessageCount, agent.online, agent.managed, connected]);
   const stale = !connected || !agent.online || !!error;
   return <div className={'usage-meter' + (stale ? ' stale' : '')} aria-label="Context usage">
-    <ContextIndicator context={stats?.contextUsage} compacting={agent.online && agent.compaction ? agentStatus(agent).toLowerCase() : undefined}/>
-    {(error || stale) && <span className="usage-note">{error || 'Offline · last reported'}</span>}
+    <ContextIndicator context={stats?.contextUsage} compacting={agent.online && agent.compaction ? agentStatus(agent).toLowerCase() : undefined} notice={error || (stale ? 'Offline · last reported' : undefined)}/>
   </div>;
 }
 
-export function ContextIndicator({ context, compacting }: { context?: RecordData; compacting?: string }) {
+export function ContextIndicator({ context, compacting, notice }: { context?: RecordData; compacting?: string; notice?: string }) {
   const [details, setDetails] = useState(false);
   const valid = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
   const known = !compacting && valid(context?.tokens) && valid(context?.contextWindow) && context.contextWindow > 0;
@@ -42,13 +41,13 @@ export function ContextIndicator({ context, compacting }: { context?: RecordData
   const label = compacting || (percent === undefined ? 'unknown' : `${percent.toFixed(1)}%`);
   const tokens = known ? `${count.format(context!.tokens)} / ${count.format(context!.contextWindow)} tokens (${context!.tokens.toLocaleString('en')} / ${context!.contextWindow.toLocaleString('en')})`
     : valid(context?.contextWindow) && context.contextWindow > 0 ? `Usage unknown / ${count.format(context.contextWindow)} tokens` : 'Usage not yet available';
-  const description = `${compacting ? compacting + '. ' : ''}${tokens}. Estimated current context, not cumulative session tokens.`;
+  const description = `${notice ? notice + '. ' : ''}${compacting ? compacting + '. ' : ''}${tokens}. Estimated current context, not cumulative session tokens.`;
   return <span className={'context-indicator ' + level}>
-    <button type="button" className="context-button" aria-label={`Context usage: ${label}. Tap for token counts`} aria-expanded={details} title={description} onClick={() => setDetails(!details)}>
+    <button type="button" className="context-button" aria-label={`Context usage: ${label}.${notice ? ' ' + notice + '.' : ''} Tap for token counts`} aria-expanded={details} title={description} onClick={() => setDetails(!details)}>
       <span>Context</span><span className="context-battery" role="progressbar" aria-label="Estimated context usage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === undefined ? undefined : Math.min(100, percent)} aria-valuetext={label}>
         <span className="context-battery-track"><span className="context-battery-charge" style={{ width: percent === undefined ? '100%' : `${Math.min(100, percent)}%` }}/></span>
-      </span><span>{label}</span>
+      </span><span>{label}</span>{notice && <span aria-hidden="true">!</span>}
     </button>
-    {details && <span className="context-token-details">{tokens}</span>}
+    {details && <span className="context-token-details">{notice ? notice + '. ' : ''}{tokens}</span>}
   </span>;
 }
