@@ -326,7 +326,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
     ws.on('message', async data => {
       let r: RecordData = {};
       try {
-        if ((sessions.get(browserSessions.get(ws) || '') || 0) <= Date.now()) { ws.close(1008, 'Session expired'); return; }
+        if (sessionExpiry(browserSessions.get(ws) || '') <= Date.now()) { ws.close(1008, 'Session expired'); return; }
         const parsed = JSON.parse(data.toString());
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Expected object');
         r = parsed;
