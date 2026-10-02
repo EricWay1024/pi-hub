@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { emptyAgent } from '../shared/state.js';
-import { UsageMeter } from '../web/UsageMeter.js';
+import { ContextIndicator, UsageMeter } from '../web/UsageMeter.js';
 
 test('usage meter shows context and compaction without a money estimate', () => {
   const agent = emptyAgent('context');
@@ -12,5 +12,5 @@ test('usage meter shows context and compaction without a money estimate', () => 
   assert.ok(html.includes('Context')); assert.ok(!html.includes('Session estimate')); assert.ok(!html.includes('USD')); assert.ok(!html.includes('cost'));
   agent.compaction = { reason: 'threshold', startedAt: 1 }; html = render();
   assert.ok(html.includes('auto-compacting…')); assert.ok(!html.includes('USD'));
-  agent.compaction.reason = 'manual'; assert.ok(render().includes('Context compacting…'));
+  agent.compaction.reason = 'manual'; assert.ok(render().includes('compacting…'));
 });

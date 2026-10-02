@@ -26,13 +26,29 @@ export function UsageMeter({ agent, connected, request }: { agent: AgentState; c
     void refresh(); const timer = setInterval(() => void refresh(), 15_000);
     return () => { stopped = true; clearInterval(timer); };
   }, [agent.id, agent.sessionId, agent.sessionFile, agent.busy, agent.compaction?.startedAt, agent.model, agent.totalMessageCount, agent.online, agent.managed, connected]);
-  const context = stats?.contextUsage;
-  const valid = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
-  const knownContext = valid(context?.tokens) && valid(context?.contextWindow) && context.contextWindow > 0;
-  const percent = knownContext ? context.tokens / context.contextWindow * 100 : undefined;
   const stale = !connected || !agent.online || !!error;
   return <div className={'usage-meter' + (stale ? ' stale' : '')} aria-label="Context usage">
-    <span className={percent !== undefined && percent >= 85 ? 'usage-high' : ''} title="Estimated current context, not cumulative session tokens. Unknown after compaction until the next model response.">Context {agent.online && agent.compaction ? agentStatus(agent).toLowerCase() : knownContext ? `${percent!.toFixed(1)}% · ${count.format(context.tokens)} / ${count.format(context.contextWindow)}` : valid(context?.contextWindow) && context.contextWindow > 0 ? `unknown / ${count.format(context.contextWindow)}` : '—'}</span>
+    <ContextIndicator context={stats?.contextUsage} compacting={agent.online && agent.compaction ? agentStatus(agent).toLowerCase() : undefined}/>
     {(error || stale) && <span className="usage-note">{error || 'Offline · last reported'}</span>}
   </div>;
+}
+
+export function ContextIndicator({ context, compacting }: { context?: RecordData; compacting?: string }) {
+  const [details, setDetails] = useState(false);
+  const valid = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+  const known = !compacting && valid(context?.tokens) && valid(context?.contextWindow) && context.contextWindow > 0;
+  const percent = known ? context!.tokens / context!.contextWindow * 100 : undefined;
+  const level = percent === undefined ? 'unknown' : percent >= 95 ? 'critical' : percent >= 85 ? 'high' : 'normal';
+  const label = compacting || (percent === undefined ? 'unknown' : `${percent.toFixed(1)}%`);
+  const tokens = known ? `${count.format(context!.tokens)} / ${count.format(context!.contextWindow)} tokens (${context!.tokens.toLocaleString('en')} / ${context!.contextWindow.toLocaleString('en')})`
+    : valid(context?.contextWindow) && context.contextWindow > 0 ? `Usage unknown / ${count.format(context.contextWindow)} tokens` : 'Usage not yet available';
+  const description = `${compacting ? compacting + '. ' : ''}${tokens}. Estimated current context, not cumulative session tokens.`;
+  return <span className={'context-indicator ' + level}>
+    <button type="button" className="context-button" aria-label={`Context usage: ${label}. Tap for token counts`} aria-expanded={details} title={description} onClick={() => setDetails(!details)}>
+      <span>Context</span><span className="context-battery" role="progressbar" aria-label="Estimated context usage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === undefined ? undefined : Math.min(100, percent)} aria-valuetext={label}>
+        <span className="context-battery-track"><span className="context-battery-charge" style={{ width: percent === undefined ? '100%' : `${Math.min(100, percent)}%` }}/></span>
+      </span><span>{label}</span>
+    </button>
+    {details && <span className="context-token-details">{tokens}</span>}
+  </span>;
 }

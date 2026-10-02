@@ -58,7 +58,19 @@
 .app .usage-meter { display: contents; }
 .app .usage-meter > span { overflow-wrap: anywhere; }
 .app .usage-meter.stale > span { opacity: .8; }
-.app .usage-high { color: #956d22; }
+.app .context-indicator { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; max-width: 100%; }
+.app .workspace-meta .context-button { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; padding: 0; min-height: 28px; color: inherit; font: inherit; }
+.app .context-button:focus-visible { outline: 2px solid #688b57; outline-offset: 3px; border-radius: 3px; }
+.app .context-battery { display: inline-block; position: relative; width: 36px; height: 14px; flex: none; border: 1px solid #859982; border-radius: 3px; margin-right: 3px; }
+.app .context-battery::after { content: ''; position: absolute; width: 3px; height: 6px; right: -4px; top: 3px; background: #859982; border-radius: 0 2px 2px 0; }
+.app .context-battery-track { position: absolute; inset: 2px; overflow: hidden; background: #e7eddf; border-radius: 1px; }
+.app .context-battery-charge { display: block; height: 100%; background: #688b57; }
+.app .context-indicator.high { color: #956d22; }
+.app .context-indicator.high .context-battery-charge { background: #ba8c36; }
+.app .context-indicator.critical { color: #a34f39; }
+.app .context-indicator.critical .context-battery-charge { background: #b55d46; }
+.app .context-indicator.unknown .context-battery-charge { background: repeating-linear-gradient(135deg, #c3cec0 0 3px, #e7eddf 3px 6px); }
+.app .context-token-details { font-size: 10px; overflow-wrap: anywhere; }
 .app .usage-note { width: 100%; font-size: 10px; }
 .app .activity { padding: 16px 14px; }
 .app .activity h3 { margin-bottom: 0; }
