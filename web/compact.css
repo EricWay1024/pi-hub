@@ -6,6 +6,17 @@
 .app .section-title { padding: 0 10px 6px; }
 .app .agent-item { padding: 9px 10px; margin: 3px 0; }
 .app .agent-item small { margin-top: 4px; }
+.app .agent-list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.app .agent-list .section-title { align-items: center; }
+.app .reorder-toggle { padding: 2px 6px; color: #b9cbb4; font-size: 16px; }
+.app .agent-entry { position: relative; }
+.app .agent-entry .agent-item { padding-right: 34px; }
+.app .agent-drag { position: absolute; right: 4px; top: 6px; padding: 4px 6px; color: #9cad9d; cursor: grab; opacity: .6; }
+.app .agent-drag:active { cursor: grabbing; }
+.app .agent-entry:hover .agent-drag, .app .agent-drag:focus-visible { opacity: 1; }
+.app .agent-entry.drop-target { outline: 1px dashed #9eb78b; border-radius: 9px; }
+.app .agent-moves { display: flex; gap: 6px; padding: 0 8px 6px; }
+.app .agent-moves button { flex: 1; padding: 4px 6px; min-height: 32px; color: #c3d3be; background: #23332e; border-color: #3e4d40; font-size: 11px; }
 .app .sidebar footer { padding: 10px 6px 0; }
 .app .sidebar footer button { margin-top: 4px; }
 .app header { min-height: 48px; padding: 6px 16px; gap: 8px; }
