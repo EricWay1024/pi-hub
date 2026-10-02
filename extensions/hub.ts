@@ -4,6 +4,7 @@ import { hostname } from 'node:os';
 import { attachedAgentId } from '../shared/agent-identity.js';
 import { loadConfig } from '../server/config.js';
 import type { RecordData } from '../shared/state.js';
+import { sessionUsage } from '../shared/usage.js';
 
 /** Outbound-only connection. Never starts a server inside a Pi process. */
 export default function (pi: ExtensionAPI) {
@@ -71,6 +72,7 @@ export default function (pi: ExtensionAPI) {
         }
         case 'abort': ctx.abort(); break;
         case 'get_state': data = { model: ctx.model, thinkingLevel: pi.getThinkingLevel(), isStreaming: !ctx.isIdle(), sessionFile: ctx.sessionManager.getSessionFile(), sessionId: ctx.sessionManager.getSessionId() }; break;
+        case 'get_session_stats': data = { ...sessionUsage(ctx.sessionManager.getEntries()), contextUsage: ctx.getContextUsage(), sessionId: ctx.sessionManager.getSessionId() }; break;
         case 'get_messages': data = { messages: ctx.sessionManager.getBranch().filter(e => e.type === 'message').map(e => (e as any).message) }; break;
         case 'get_available_models': data = { models: ctx.modelRegistry.getAvailable() }; break;
         case 'get_commands': data = { commands: pi.getCommands() }; break;
@@ -91,7 +93,8 @@ export default function (pi: ExtensionAPI) {
           await new Promise<void>((resolve, reject) => ctx!.compact({ customInstructions: c.customInstructions, onComplete: () => resolve(), onError: reject })); break;
         default: throw new Error('Unsupported attached-agent command');
       }
-      send({ type: 'response', id: c.id, command: c.type, success: true, data }); snapshot();
+      send({ type: 'response', id: c.id, command: c.type, success: true, data });
+      if (c.type !== 'get_session_stats') snapshot();
     } catch (error) { send({ type: 'response', id: c.id, command: c.type, success: false, error: error instanceof Error ? error.message : 'Command failed' }); }
   }
   function connect() {

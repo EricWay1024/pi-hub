@@ -25,7 +25,7 @@ test('extension attaches, forwards images, discovers and dispatches registered s
   await writeFile(process.env.PI_HUB_CONFIG, JSON.stringify(config));
   const handlers = new Map<string, Function>(), sent: any[] = [];
   const pi: any = { on: (type: string, handler: Function) => handlers.set(type, handler), events: { on: () => {} }, registerCommand: () => {}, getSessionName: () => 'Attached', getThinkingLevel: () => 'medium', getCommands: () => [{ name: 'example', description: 'Example command', source: 'extension' }, { name: 'disconnect-test', source: 'extension' }], sendUserMessage: (...args: any[]) => { sent.push(args); if (args[0][0].text === '/disconnect-test') handlers.get('session_shutdown')?.(); } };
-  const ctx: any = { cwd: temp, model: { id: 'test-model' }, isIdle: () => false, sessionManager: { getBranch: () => [], getSessionFile: () => undefined, getSessionId: () => 'session-test' }, ui: { setStatus: () => {} } };
+  const ctx: any = { cwd: temp, model: { id: 'test-model' }, isIdle: () => false, getContextUsage: () => ({ tokens: 45000, contextWindow: 200000, percent: 22.5 }), sessionManager: { getBranch: () => [], getEntries: () => [{ type: 'usage', usage: { input: 100, output: 10, cacheRead: 20, cacheWrite: 0, cost: { total: 0.25 } } }], getSessionFile: () => undefined, getSessionId: () => 'session-test' }, ui: { setStatus: () => {} } };
   try {
     hubExtension(pi);
     const connection = once(wss, 'connection'); handlers.get('session_start')!({}, ctx);
@@ -38,6 +38,8 @@ test('extension attaches, forwards images, discovers and dispatches registered s
     assert.equal(sent[0][1].expandPromptTemplates, true);
     const discovered = next(ws, 'response'); ws.send(JSON.stringify({ type: 'command', command: { type: 'get_commands', id: 'commands' } }));
     assert.equal((await discovered).data.commands[0].name, 'example');
+    const usage = next(ws, 'response'); ws.send(JSON.stringify({ type: 'command', command: { type: 'get_session_stats', id: 'usage' } }));
+    const stats = (await usage).data; assert.equal(stats.cost, 0.25); assert.equal(stats.tokens.total, 130); assert.equal(stats.contextUsage.percent, 22.5);
     const dispatch = next(ws, 'response'); ws.send(JSON.stringify({ type: 'command', command: { type: 'prompt', id: 'example', message: '/example arguments' } }));
     assert.equal((await dispatch).success, true);
     assert.equal(sent[1][0][0].text, '/example arguments'); assert.equal(sent[1][1].expandPromptTemplates, true);

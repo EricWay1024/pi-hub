@@ -338,7 +338,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
           send(ws, { type: 'reply', id: r.id, success: true }); return;
         }
         if (r.type !== 'command' || !r.command || typeof r.command !== 'object') throw new Error('Invalid command');
-        const allowed = ['prompt', 'steer', 'follow_up', 'abort', 'get_state', 'get_messages', 'get_available_models', 'set_model', 'set_thinking_level', 'set_session_name', 'compact', 'get_commands', 'extension_ui_response'];
+        const allowed = ['prompt', 'steer', 'follow_up', 'abort', 'get_state', 'get_messages', 'get_session_stats', 'get_available_models', 'set_model', 'set_thinking_level', 'set_session_name', 'compact', 'get_commands', 'extension_ui_response'];
         if (!allowed.includes(r.command.type)) throw new Error('Unsupported command');
         if (['prompt','steer','follow_up'].includes(r.command.type) && typeof r.command.message !== 'string') throw new Error('Message required');
         if (r.command.type === 'extension_ui_response') {

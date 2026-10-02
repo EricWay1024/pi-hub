@@ -10,6 +10,7 @@ A self-hosted browser/PWA control room for [Pi](https://pi.dev) agents, with a d
 - Live Markdown, code, tables, and KaTeX mathematics, including `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`.
 - Readable paired tool calls/results, file paths, shell output, edit diffs, and structured subagent reports. Empty reasoning is hidden; assistant/tool rounds share one response label.
 - Visible steering/follow-up queues, abort, compaction, renaming, model/thinking controls, and supported RPC extension dialogs.
+- Current context tokens/window/percentage and cumulative session cost estimate in USD, refreshed every 15 seconds and on agent start/settle. Costs follow Pi's recorded usage (including recorded summaries/tool usage and abandoned branches), not actual provider billing or unreported child-agent spending. Context is unknown after compaction until the next model response. Existing attached sessions need `/reload` after updating the extension.
 - Slash autocomplete for the selected agent's extensions, skills, templates, and web controls. CLI-only commands are labelled rather than sent as model prompts.
 - Latest 40 messages initially; earlier history loads in batches with stable scrolling, including saved sessions beyond the live buffer.
 - Password + authenticator-app 2FA, one-use recovery codes, 12-hour ordinary sessions, and optional revocable **30-day trusted browsers**.
