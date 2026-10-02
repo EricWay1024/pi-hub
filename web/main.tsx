@@ -63,7 +63,8 @@ function App() {
   const [commandHelp, setCommandHelp] = useState<SlashCommand[] | null>(null);
   const commandCache = useRef(new Map<string, SlashCommand[]>());
   const wsRef = useRef<WebSocket | null>(null), pending = useRef(new Map<string, { resolve: (r: RecordData) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>());
-  const bottom = useRef<HTMLDivElement>(null), follow = useRef(true), fileInput = useRef<HTMLInputElement>(null);
+  const follow = useRef(true), fileInput = useRef<HTMLInputElement>(null);
+  const openedConversation = useRef('');
   const conversation = useRef<HTMLDivElement>(null);
   const scrollAnchor = useRef<{ agentId: string; height: number; top: number } | null>(null);
   const [histories, setHistories] = useState<Record<string, HistoryView | undefined>>({});
@@ -126,15 +127,29 @@ function App() {
     }
     connect(); return () => { stopped = true; clearTimeout(timer); wsRef.current?.close(); };
   }, [authed]);
-  useEffect(() => { if (follow.current) bottom.current?.scrollIntoView({ behavior: 'instant' }); }, [agent?.updatedAt, selected]);
   useEffect(() => { setModels([]); }, [selected]);
   useLayoutEffect(() => {
-    const anchor = scrollAnchor.current, el = conversation.current;
-    if (anchor && anchor.agentId === selected && el) {
-      el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
-      scrollAnchor.current = null;
+    const el = conversation.current;
+    if (!agent || !el) { openedConversation.current = ''; return; }
+    const key = `${selected}:${historySession(agent)}`;
+    if (openedConversation.current !== key) {
+      openedConversation.current = key; scrollAnchor.current = null; follow.current = true;
+      el.scrollTop = el.scrollHeight; return;
     }
-  }, [displayedMessages, selected]);
+    const anchor = scrollAnchor.current;
+    if (anchor && anchor.agentId === selected) {
+      el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
+      scrollAnchor.current = null; return;
+    }
+    if (follow.current) el.scrollTop = el.scrollHeight;
+  }, [displayedMessages, selected, agent?.sessionId, agent?.sessionFile, agent?.updatedAt, reading.active]);
+  useLayoutEffect(() => {
+    const el = conversation.current, transcript = el?.querySelector('.transcript');
+    if (!el || !transcript) return;
+    const observer = new ResizeObserver(() => { if (follow.current) el.scrollTop = el.scrollHeight; });
+    observer.observe(el); observer.observe(transcript);
+    return () => observer.disconnect();
+  }, [selected, !!agent]);
   async function showEarlier() {
     if (!agent || !displayedMessages.length || historyLoading[selected]) return;
     const id = selected, session = historySession(agent), currentMessages = displayedMessages;
@@ -154,7 +169,7 @@ function App() {
   function backToLatest() {
     scrollAnchor.current = null; follow.current = true;
     setHistories(prev => ({ ...prev, [selected]: undefined }));
-    requestAnimationFrame(() => bottom.current?.scrollIntoView({ behavior: 'instant' }));
+    requestAnimationFrame(() => { if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight; });
   }
   function rpc(command: RecordData, agentId = selected, type = 'command'): Promise<RecordData> {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Hub is disconnected'));
@@ -250,7 +265,7 @@ function App() {
     <aside id="agent-sidebar" aria-label="Agents and workspace navigation" className={'sidebar ' + (mobileList ? 'shown' : '')}><div className="brand"><span className="logo">π</span><div><strong>Pi Hub</strong><small>YOUR WORKSPACE</small></div><button className="mobile-only subtle" aria-label="Close sidebar" onClick={closeMobileSidebar}>×</button></div>
       <div className="connection"><span className={'dot ' + (connected ? 'online' : '')}/>{connected ? 'Connected to workspace' : 'Reconnecting…'}</div>
       <button className="new-agent" disabled={!connected} onClick={async () => { try { const r = await api('projects'); setProjects(r.projects); setProject(r.projects[0]?.path || r.root); setMobileList(false); setLaunching(true); } catch (e) { setError((e as Error).message); } }}>＋ New agent</button>
-      <div className="section-title">AGENTS <span>{Object.keys(agents).length}</span></div><nav>{Object.values(agents).map(a => <button className={'agent-item ' + (selected === a.id ? 'active' : '')} key={a.id} onClick={() => { setSelected(a.id); closeMobileSidebar(); follow.current = true; }}><div className="row"><span className={'dot ' + (a.online ? a.busy ? 'busy' : 'online' : '')}/><strong>{a.name}</strong></div><small>{a.cwd?.split('/').pop()} · {agentStatus(a)}</small><small className="agent-kind">{a.managed ? 'Browser-managed' : 'Terminal'} · {a.host}</small></button>)}</nav>
+      <div className="section-title">AGENTS <span>{Object.keys(agents).length}</span></div><nav>{Object.values(agents).map(a => <button className={'agent-item ' + (selected === a.id ? 'active' : '')} key={a.id} onClick={() => { setSelected(a.id); closeMobileSidebar(); scrollAnchor.current = null; follow.current = true; requestAnimationFrame(() => { if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight; }); }}><div className="row"><span className={'dot ' + (a.online ? a.busy ? 'busy' : 'online' : '')}/><strong>{a.name}</strong></div><small>{a.cwd?.split('/').pop()} · {agentStatus(a)}</small><small className="agent-kind">{a.managed ? 'Browser-managed' : 'Terminal'} · {a.host}</small></button>)}</nav>
       <footer><button className={'subtle security-link ' + (twoFactor ? '' : 'warning')} onClick={() => { setMobileList(false); setSecurity(true); }}>Security · 2FA {twoFactor ? 'on' : 'off'}</button><button className="subtle" onClick={async () => { try { await api('logout', {}); setAuthed(false); setMobileList(false); setAgents({}); setHistories({}); } catch (e) { setError((e as Error).message); } }}>Sign out ↗</button></footer>
     </aside>
     <main><header><div className="workspace-heading"><button type="button" className="desktop-only sidebar-toggle subtle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="agent-sidebar" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>{sidebarCollapsed ? '☰' : '‹'}</button><button ref={mobileSidebarToggle} type="button" className="mobile-only sidebar-toggle subtle" aria-label="Open sidebar" aria-expanded={mobileList} aria-controls="agent-sidebar" onClick={() => setMobileList(true)}>☰</button><div className="workspace-title"><h2 title={agent?.name || 'Your workspace'}>{agent?.name || 'Your workspace'}</h2><div className="workspace-meta"><small title={agent ? `${agent.model || 'Pi'} · ${agent.thinking || 'default'} thinking` : undefined}>{agent ? `${agent.model || 'Pi'} · ${agent.thinking || 'default'} thinking` : 'Choose an agent to begin'}</small>{agent && <UsageMeter key={`${agent.id}:${agent.sessionId || agent.sessionFile || ''}`} agent={agent} connected={connected} request={() => rpc({ type: 'get_session_stats' }, agent.id)}/>}</div></div></div>{agent && <div className="header-actions">{reading.active && <button className="subtle" aria-label="Exit reading mode" title="Exit reading mode (F11 or Escape)" onClick={reading.exit}>⤢</button>}<span className="status">{agent.online ? '● ' : ''}{agentStatus(agent)}</span><button className="subtle" aria-label="Rename agent" title="Rename agent" disabled={!connected || !agent.online} onClick={() => { const name = window.prompt('Agent name', agent.name); if (name?.trim()) act({ type: 'set_session_name', name: name.trim() }); }}>✎</button><button className="activity-toggle" aria-label="Activity" title="Activity and controls" onClick={() => setPanel(!panel)} aria-expanded={panel}><span className="activity-text">Activity {Object.values(agent.tools || {}).filter(t => t.running).length || ''}</span><span className="activity-icon" aria-hidden="true">☷</span></button></div>}</header>
@@ -265,7 +280,7 @@ function App() {
           {Object.values(agent.dialogs || {}).map(d => <Dialog key={d.id} dialog={d} respond={r => act({ type: 'extension_ui_response', id: d.id, ...r })}/>)}
           <MessageQueue queue={agent.queue}/>
           {agent.online && (agent.busy || agent.compaction) && <div className="working" role="status"><span className="dot busy"/> {agent.compaction ? `${agentStatus(agent)} Summarizing context; your queued messages are preserved.` : 'Pi is working. You can steer or queue a follow-up.'}</div>}
-          <div ref={bottom}/></div>}
+          </div>}
       </div>
       {panel && agent && <aside className="activity"><div className="row between"><h3>Control room</h3><button className="subtle" onClick={() => setPanel(false)}>×</button></div><small className="path">{agent.cwd}</small>
         <div className="row wrap"><button onClick={reading.toggle} title="Toggle full-screen reading (F11)">Reading mode (F11)</button><button onClick={exportTranscript}>Save transcript</button><button disabled={!connected || !agent.online || agent.busy} onClick={() => act({ type: 'compact' })}>Compact</button><button disabled={!connected || !agent.online} onClick={() => { const name = window.prompt('Agent name', agent.name); if (name?.trim()) act({ type: 'set_session_name', name: name.trim() }); }}>Rename</button></div>
