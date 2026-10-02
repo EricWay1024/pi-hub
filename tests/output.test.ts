@@ -49,10 +49,12 @@ test('brief reasoning is shown directly while longer reasoning remains expandabl
     assert.match(html, /reasoning-brief/); assert.ok(html.includes('Need investigate.'));
     assert.ok(!html.includes('<details')); assert.ok(!html.includes('2 words'));
   }
-  const long = render('Checking each part of the proof carefully before deciding whether the conclusion follows.');
-  assert.ok(long.includes('<details')); assert.ok(long.includes('Reasoning · 13 words'));
-  assert.ok(!render('x'.repeat(200)).includes('reasoning-brief'));
-  assert.ok(!render('a\nb\nc\nd').includes('reasoning-brief'));
+  const boundary = render(Array(100).fill('word').join(' '));
+  assert.ok(boundary.includes('reasoning-brief')); assert.ok(!boundary.includes('<details'));
+  const long = render(Array(101).fill('word').join(' '));
+  assert.ok(long.includes('<details')); assert.ok(long.includes('Reasoning · 101 words'));
+  assert.ok(render('x'.repeat(200)).includes('reasoning-brief'));
+  assert.ok(render('a\nb\nc\nd').includes('reasoning-brief'));
   assert.ok(!render(' \n\u200b').includes('reasoning-brief'));
 });
 

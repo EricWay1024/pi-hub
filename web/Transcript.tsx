@@ -18,7 +18,7 @@ export function Transcript({ messages, partial, tools = {} }: { messages: Record
         if (block.type === 'text' && hasText(block.text)) return <RichText key={i} text={block.text} preserveLineBreaks={message.role === 'user'}/>;
         if (block.type === 'thinking' && hasText(block.thinking)) {
           const text = block.thinking.trim(), words = text.split(/\s+/).length;
-          if (words <= 12 && text.length <= 160 && text.split('\n').length <= 3) return <div key={i} className="reasoning-brief" role="note" aria-label="Reasoning"><RichText text={text}/></div>;
+          if (words <= 100) return <div key={i} className="reasoning-brief" role="note" aria-label="Reasoning"><RichText text={text}/></div>;
           return <details key={i} className="thinking"><summary>Reasoning · {words} words</summary><RichText text={text}/></details>;
         }
         if (block.type === 'toolCall') return <ToolCard key={block.id || i} name={block.name} args={block.arguments} result={results.get(block.id)} execution={tools[block.id]}/>;
