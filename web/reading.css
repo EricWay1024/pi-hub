@@ -1,0 +1,21 @@
+.app.reading-mode { height: 100dvh; min-height: 0; }
+.app.reading-mode > .sidebar, .app.reading-mode > .sidebar-backdrop { display: none !important; }
+.app.reading-mode main { height: 100dvh; min-width: 0; }
+.app.reading-mode .content { min-height: 0; flex: 1; }
+.app.reading-mode header { position: fixed; top: 0; left: 0; right: 0; z-index: 25; transform: translateY(-100%); opacity: 0; pointer-events: none; transition: transform .16s ease, opacity .16s ease; box-shadow: 0 4px 16px #10202012; }
+.app.reading-mode header .sidebar-toggle { display: none; }
+.app.reading-mode.reading-top header, .app.reading-mode header:focus-within { transform: translateY(0); opacity: 1; pointer-events: auto; }
+.app.reading-mode .composer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 25; background: #fafaf6; border-top: 1px solid #e3e6dc; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform .16s ease, opacity .16s ease; }
+.app.reading-mode.reading-bottom .composer, .app.reading-mode .composer:focus-within { transform: translateY(0); opacity: 1; pointer-events: auto; }
+.app.reading-mode .composer-box { max-width: 1000px; }
+.app.reading-mode .transcript { max-width: 1000px; padding-top: 24px; padding-bottom: 24px; }
+.app.reading-mode .activity { position: fixed; top: 48px; right: 0; bottom: 0; z-index: 24; }
+.app.reading-mode .error-banner { display: none; }
+.app.reading-mode.reading-top .error-banner, .app.reading-mode.reading-bottom .error-banner { display: flex; position: fixed; top: 48px; left: 0; right: 0; z-index: 26; }
+@media (max-width: 760px) {
+  .app.reading-mode .transcript { padding: 12px; }
+  .app.reading-mode .activity, .app.reading-mode .error-banner { top: 46px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.reading-mode header, .app.reading-mode .composer { transition: none; }
+}
