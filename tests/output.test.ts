@@ -5,8 +5,22 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Transcript } from '../web/Transcript.js';
 import { ToolCard } from '../web/ToolOutput.js';
 import { MessageQueue } from '../web/MessageQueue.js';
+import { RichText } from '../web/RichText.js';
 import { activityPresentation, displayable, parseOutput, responseGroups } from '../shared/output.js';
 import { applyEvent, emptyAgent } from '../shared/state.js';
+
+test('user prompt and queue newlines remain visible without changing assistant Markdown, math, or code', () => {
+  const text = 'First line\nSecond line\nThird line';
+  const html = renderToStaticMarkup(createElement(Transcript, { messages: [{ role: 'user', content: text, timestamp: 1 }] }));
+  assert.match(html, /First line<br\s*\/?>(?:\n)?Second line<br\s*\/?>(?:\n)?Third line/);
+  const queued = renderToStaticMarkup(createElement(MessageQueue, { queue: { steering: [text], followUp: [text] } }));
+  assert.equal((queued.match(/<br\s*\/?>/g) || []).length, 4);
+  const assistant = renderToStaticMarkup(createElement(RichText, { text }));
+  assert.ok(!assistant.includes('<br'));
+  const formatted = renderToStaticMarkup(createElement(RichText, { text: 'First $x^2$\r\nSecond\n\n```text\na\nb\n```', preserveLineBreaks: true }));
+  assert.ok(formatted.includes('katex')); assert.match(formatted, /<br\s*\/?>/);
+  assert.match(formatted, /<code class="language-text">a\nb\n<\/code>/);
+});
 
 test('tool rounds share one identity label; call and result are paired; empty reasoning is invisible', () => {
   const messages = [

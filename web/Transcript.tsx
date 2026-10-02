@@ -15,7 +15,7 @@ export function Transcript({ messages, partial, tools = {} }: { messages: Record
     if (message.role === 'bashExecution') return <ToolCard name="bash" args={{ command: message.command }} result={{ content: [{ type: 'text', text: message.output || '' }], details: { exitCode: message.exitCode }, isError: !!message.exitCode }}/>;
     return <div className={'message ' + message.role}>
       {contentBlocks(message).map((block, i) => {
-        if (block.type === 'text' && hasText(block.text)) return <RichText key={i} text={block.text}/>;
+        if (block.type === 'text' && hasText(block.text)) return <RichText key={i} text={block.text} preserveLineBreaks={message.role === 'user'}/>;
         if (block.type === 'thinking' && hasText(block.thinking)) return <details key={i} className="thinking"><summary>Reasoning · {block.thinking.trim().split(/\s+/).length} words</summary><RichText text={block.thinking}/></details>;
         if (block.type === 'toolCall') return <ToolCard key={block.id || i} name={block.name} args={block.arguments} result={results.get(block.id)} execution={tools[block.id]}/>;
         if (block.type === 'image' && ['image/png','image/jpeg','image/webp','image/gif'].includes(block.mimeType)) return <img key={i} className="attachment" alt="Attached image" src={`data:${block.mimeType};base64,${block.data}`}/>;

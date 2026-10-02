@@ -14,6 +14,24 @@ function displayMath() {
     walk(tree);
   };
 }
-export const RichText = React.memo(function RichText({ text }: { text: string }) {
-  return <Markdown remarkPlugins={[remarkGfm, remarkMath, displayMath]} rehypePlugins={[[rehypeKatex, { strict: false, trust: false }]]} components={{ a: props => <a {...props} target="_blank" rel="noopener noreferrer"/> }}>{normalizeMath(text)}</Markdown>;
+// Markdown soft breaks normally collapse to spaces. Preserve them only for
+// user input, without modifying code/math nodes or assistant Markdown.
+function promptLineBreaks() {
+  return (tree: any) => {
+    function walk(node: any) {
+      if (!node.children) return;
+      node.children = node.children.flatMap((child: any) => {
+        if (child.type === 'text' && /[\r\n]/.test(child.value)) {
+          return child.value.split(/\r\n|\r|\n/).flatMap((line: string, i: number) => [
+            ...(i ? [{ type: 'break' }] : []), ...(line ? [{ type: 'text', value: line }] : []),
+          ]);
+        }
+        walk(child); return [child];
+      });
+    }
+    walk(tree);
+  };
+}
+export const RichText = React.memo(function RichText({ text, preserveLineBreaks = false }: { text: string; preserveLineBreaks?: boolean }) {
+  return <Markdown remarkPlugins={[remarkGfm, remarkMath, displayMath, ...(preserveLineBreaks ? [promptLineBreaks] : [])]} rehypePlugins={[[rehypeKatex, { strict: false, trust: false }]]} components={{ a: props => <a {...props} target="_blank" rel="noopener noreferrer"/> }}>{normalizeMath(text)}</Markdown>;
 });
