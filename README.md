@@ -13,7 +13,7 @@ A self-hosted browser/PWA control room for [Pi](https://pi.dev) agents, with a d
 - Slash autocomplete for the selected agent's extensions, skills, templates, and web controls. CLI-only commands are labelled rather than sent as model prompts.
 - Latest 40 messages initially; earlier history loads in batches with stable scrolling, including saved sessions beyond the live buffer.
 - Password + authenticator-app 2FA, one-use recovery codes, 12-hour ordinary sessions, and optional revocable **30-day trusted browsers**.
-- Mobile layout, image/text attachments, transcript export, and an installable PWA shell. Conversations and API responses are not cached offline.
+- Foldable agent sidebar (desktop choice remembered per browser), mobile drawer with Escape/backdrop dismissal, image/text attachments, transcript export, and an installable PWA shell. Conversations and API responses are not cached offline.
 
 ## Quick start
 

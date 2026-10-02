@@ -1,0 +1,18 @@
+.desktop-only { display: inline-flex; }
+.workspace-heading { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.workspace-title { min-width: 0; }
+.workspace-title h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-toggle { flex-shrink: 0; padding: 6px 10px; font-size: 20px; line-height: 1; }
+.sidebar-toggle:focus-visible { outline: 2px solid #88b49b; outline-offset: 2px; }
+.sidebar-backdrop { display: none; }
+@media (min-width: 761px) {
+  .app.sidebar-collapsed > .sidebar { display: none; }
+}
+@media (max-width: 760px) {
+  .desktop-only { display: none; }
+  .sidebar-backdrop.mobile-only {
+    display: block; position: fixed; inset: 0; z-index: 9;
+    border: 0; border-radius: 0; padding: 0; background: #101c1b66;
+  }
+}
