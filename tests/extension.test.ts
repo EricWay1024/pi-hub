@@ -40,6 +40,17 @@ test('extension attaches, forwards images, discovers and dispatches registered s
     assert.equal((await discovered).data.commands[0].name, 'example');
     const usage = next(ws, 'response'); ws.send(JSON.stringify({ type: 'command', command: { type: 'get_session_stats', id: 'usage' } }));
     const stats = (await usage).data; assert.equal(stats.cost, 0.25); assert.equal(stats.tokens.total, 130); assert.equal(stats.contextUsage.percent, 22.5);
+    const compactStart = next(ws, 'event'); const compactSnapshot = next(ws, 'snapshot');
+    handlers.get('session_before_compact')!({ reason: 'threshold' }, ctx);
+    assert.equal((await compactStart).event.type, 'compaction_start'); assert.equal((await compactSnapshot).state.compaction.reason, 'threshold');
+    const compactEnd = next(ws, 'event'); const compactCleared = next(ws, 'snapshot');
+    handlers.get('session_compact')!({ reason: 'threshold', willRetry: false }, ctx);
+    assert.equal((await compactEnd).event.type, 'compaction_end'); assert.equal((await compactCleared).state.compaction, null);
+    const manualStart = next(ws, 'event'), manualSnapshot = next(ws, 'snapshot');
+    handlers.get('session_before_compact')!({ reason: 'manual' }, ctx); await manualStart; await manualSnapshot;
+    const compactFailed = next(ws, 'event'); const manualIdle = next(ws, 'snapshot');
+    handlers.get('session_compact_failed')!({ reason: 'manual', aborted: true, willRetry: false }, ctx);
+    assert.equal((await compactFailed).event.aborted, true); assert.equal((await manualIdle).state.busy, false);
     const dispatch = next(ws, 'response'); ws.send(JSON.stringify({ type: 'command', command: { type: 'prompt', id: 'example', message: '/example arguments' } }));
     assert.equal((await dispatch).success, true);
     assert.equal(sent[1][0][0].text, '/example arguments'); assert.equal(sent[1][1].expandPromptTemplates, true);

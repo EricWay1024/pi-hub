@@ -48,9 +48,12 @@ export function toolStatus(result?: RecordData, execution?: RecordData): 'done' 
 export function activityPresentation(event: RecordData) {
   const data = event.payload && typeof event.payload === 'object' ? event.payload : event;
   const titles: Record<string, string> = { 'subagent:async-started': 'Subagent started', 'subagent:async-complete': 'Subagent finished', 'subagent:foreground-complete': 'Subagent finished', 'subagent:child-status': 'Subagent update', 'subagents:rpc:v1:ready': 'Subagents ready', compaction_start: 'Compacting context', compaction_end: 'Context compacted', auto_retry_start: 'Retrying request', auto_retry_end: 'Retry finished', queue_update: 'Message queue updated', diagnostic: 'Agent log', extension_error: 'Extension error', extension_ui_request: 'Agent notice' };
-  const title = titles[event.type] || humanLabel(event.type || 'Agent update');
+  const compactStart = ['compaction_start', 'auto_compaction_start'].includes(event.type), compactEnd = ['compaction_end', 'auto_compaction_end'].includes(event.type);
+  const title = compactStart ? data.reason === 'manual' ? 'Compacting context' : 'Auto-compacting context'
+    : compactEnd ? data.aborted ? 'Compaction cancelled' : hasText(data.errorMessage) ? 'Compaction failed' : 'Context compacted'
+    : titles[event.type] || humanLabel(event.type || 'Agent update');
   const agent = typeof data.agent === 'string' ? data.agent : typeof data.label === 'string' ? data.label : '';
-  const status = data.success === false || data.state === 'failed' || event.type === 'extension_error' ? 'error' : ['started', 'running', 'stopping'].includes(data.status || data.state) || event.type.endsWith('-started') ? 'running' : 'done';
+  const status = data.success === false || data.state === 'failed' || event.type === 'extension_error' || compactEnd && hasText(data.errorMessage) ? 'error' : compactStart || ['started', 'running', 'stopping'].includes(data.status || data.state) || event.type.endsWith('-started') ? 'running' : 'done';
   const summary = [data.summary, data.message, data.text, data.errorMessage, data.finalError, data.error, data.reason].find(hasText) || '';
   return { title, agent, status, summary, data };
 }

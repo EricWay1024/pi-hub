@@ -3,6 +3,7 @@ export type RecordData = Record<string, any>;
 export interface AgentState {
   id: string; name: string; cwd: string; host: string; managed: boolean;
   online: boolean; busy: boolean; model?: string; thinking?: string;
+  compaction?: { reason: 'manual' | 'threshold' | 'overflow'; startedAt: number };
   sessionFile?: string; sessionId?: string; totalMessageCount?: number; hasEarlierMessages?: boolean;
   messages: RecordData[]; partial?: RecordData;
   queue?: { steering: string[]; followUp: string[]; estimated?: boolean; tracked?: boolean };
@@ -13,11 +14,21 @@ export function emptyAgent(id: string): AgentState {
   return { id, name: 'Pi agent', cwd: '', host: '', managed: false, online: true, busy: false,
     messages: [], tools: {}, activity: [], dialogs: {}, updatedAt: Date.now() };
 }
+export function agentStatus(s: AgentState): string {
+  if (!s.online) return 'Offline';
+  if (s.compaction) return s.compaction.reason === 'manual' ? 'Compacting…' : 'Auto-compacting…';
+  return s.busy ? 'Working' : 'Ready';
+}
 export function applyEvent(s: AgentState, e: RecordData): void {
   s.updatedAt = Date.now();
+  if (['compaction_start', 'auto_compaction_start'].includes(e.type)) {
+    s.compaction = { reason: ['manual', 'threshold', 'overflow'].includes(e.reason) ? e.reason : 'threshold', startedAt: Date.now() };
+    s.busy = true;
+  }
+  if (['compaction_end', 'auto_compaction_end'].includes(e.type)) { s.compaction = undefined; if (e.reason === 'manual' && !e.willRetry) s.busy = false; }
   if (e.type === 'agent_start') s.busy = true;
   // agent_end is not idle: retries and queued continuations may still follow.
-  if (e.type === 'agent_settled') { s.busy = false; if (s.queue) { s.queue.steering = []; s.queue.followUp = []; } }
+  if (e.type === 'agent_settled') { s.busy = false; s.compaction = undefined; if (s.queue) { s.queue.steering = []; s.queue.followUp = []; } }
   if (e.type === 'queue_update') s.queue = { steering: e.steering || [], followUp: e.followUp || [], estimated: !!e.estimated, tracked: true };
   if (e.type === 'session_info_changed') s.name = e.name || 'Pi agent';
   if (e.type === 'model_select' && e.model) s.model = e.model.id;
@@ -58,7 +69,7 @@ export function applyEvent(s: AgentState, e: RecordData): void {
   if (e.type === 'extension_ui_request') {
     if (['select', 'confirm', 'input', 'editor'].includes(e.method)) s.dialogs[e.id] = e;
   }
-  if (e.type.startsWith('subagents:') || e.type.startsWith('subagent:') || ['compaction_start', 'compaction_end', 'auto_retry_start', 'auto_retry_end', 'extension_error', 'diagnostic', 'queue_update', 'extension_ui_request'].includes(e.type)) {
+  if (e.type.startsWith('subagents:') || e.type.startsWith('subagent:') || ['compaction_start', 'compaction_end', 'auto_compaction_start', 'auto_compaction_end', 'auto_retry_start', 'auto_retry_end', 'extension_error', 'diagnostic', 'queue_update', 'extension_ui_request'].includes(e.type)) {
     s.activity.push({ ...e, time: Date.now() }); s.activity = s.activity.slice(-100);
   }
 }

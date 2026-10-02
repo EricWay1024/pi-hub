@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext, SessionCompactEvent, SessionCompactFailedEvent } from '@earendil-works/pi-coding-agent';
 import { WebSocket } from 'ws';
 import { hostname } from 'node:os';
 import { attachedAgentId } from '../shared/agent-identity.js';
@@ -15,6 +15,7 @@ export default function (pi: ExtensionAPI) {
   let heartbeat: NodeJS.Timeout | undefined;
   let stopped = true;
   let delay = 1000;
+  let compaction: { reason: 'manual' | 'threshold' | 'overflow'; startedAt: number } | undefined;
   const queued = { steering: [] as string[], followUp: [] as string[] };
   const publishQueue = () => send({ type: 'event', event: { type: 'queue_update', ...queued, estimated: true } });
   const observerId = process.env.PI_HUB_OBSERVER_ID;
@@ -29,7 +30,7 @@ export default function (pi: ExtensionAPI) {
     const messages = ctx.sessionManager.getBranch().filter(e => e.type === 'message').map(e => (e as any).message);
     send({ type: 'snapshot', state: {
       name: pi.getSessionName() || ctx.cwd.split('/').pop() || 'Pi agent',
-      cwd: ctx.cwd, host: hostname(), busy: settled ? false : !ctx.isIdle(),
+      cwd: ctx.cwd, host: hostname(), busy: settled ? false : !!compaction || !ctx.isIdle(), compaction: compaction || null,
       model: ctx.model?.id, thinking: pi.getThinkingLevel(),
       messages: messages.slice(-300), totalMessageCount: messages.length,
       sessionFile: ctx.sessionManager.getSessionFile(), sessionId: ctx.sessionManager.getSessionId(),
@@ -132,8 +133,21 @@ export default function (pi: ExtensionAPI) {
     stopped = true; clearTimeout(retry); clearInterval(heartbeat); socket?.terminate(); socket = undefined;
     ctx?.ui.setStatus('hub', undefined);
   }
-  pi.on('session_start', (_e, context) => { ctx = context; if (stopped) { stopped = false; connect(); } else snapshot(); });
+  pi.on('session_start', (_e, context) => { compaction = undefined; ctx = context; if (stopped) { stopped = false; connect(); } else snapshot(); });
   pi.on('session_shutdown', stop);
+  pi.on('session_before_compact', (event, context) => {
+    ctx = context; compaction = { reason: event.reason, startedAt: Date.now() };
+    if (!observerId) { send({ type: 'event', event: { type: 'compaction_start', reason: event.reason } }); snapshot(); }
+  });
+  function compactionEnded(event: SessionCompactEvent | SessionCompactFailedEvent, context: ExtensionContext) {
+    ctx = context; compaction = undefined;
+    if (!observerId) {
+      send({ type: 'event', event: { type: 'compaction_end', reason: event.reason, aborted: 'aborted' in event ? event.aborted : false, errorMessage: 'errorMessage' in event ? event.errorMessage : undefined, willRetry: event.willRetry } });
+      snapshot(event.reason === 'manual');
+    }
+  }
+  pi.on('session_compact', compactionEnded);
+  pi.on('session_compact_failed', compactionEnded);
   pi.on('input', (event, context) => {
     ctx = context;
     if (!observerId && !context.isIdle() && event.streamingBehavior) {
@@ -143,7 +157,7 @@ export default function (pi: ExtensionAPI) {
   });
   pi.registerCommand('hub', { description: 'Connect/reconnect this agent to Pi Hub', handler: async (_args, context) => { stop(); ctx = context; stopped = false; connect(); } });
   pi.registerCommand('hub-off', { description: 'Disconnect this agent from Pi Hub', handler: async () => stop() });
-  const events = ['agent_start','agent_end','agent_settled','message_start','message_update','message_end','tool_execution_start','tool_execution_update','tool_execution_end','session_info_changed','session_compact','model_select'] as const;
+  const events = ['agent_start','agent_end','agent_settled','message_start','message_update','message_end','tool_execution_start','tool_execution_update','tool_execution_end','session_info_changed','model_select'] as const;
   for (const type of events) pi.on(type as any, (event: any, context: ExtensionContext) => {
     ctx = context;
     if (observerId) return;
@@ -151,9 +165,9 @@ export default function (pi: ExtensionAPI) {
       const text = typeof event.message.content === 'string' ? event.message.content : event.message.content?.filter((b: RecordData) => b.type === 'text').map((b: RecordData) => b.text).join('\n');
       for (const mode of ['steering', 'followUp'] as const) { const index = queued[mode].indexOf(text); if (index >= 0) { queued[mode].splice(index, 1); publishQueue(); break; } }
     }
-    if (type === 'agent_settled') { queued.steering.length = 0; queued.followUp.length = 0; publishQueue(); }
+    if (type === 'agent_settled') { compaction = undefined; queued.steering.length = 0; queued.followUp.length = 0; publishQueue(); }
     send({ type: 'event', event });
-    if (['agent_settled', 'session_compact', 'model_select', 'session_info_changed'].includes(type)) snapshot(type === 'agent_settled');
+    if (['agent_settled', 'model_select', 'session_info_changed'].includes(type)) snapshot(type === 'agent_settled');
   });
   // pi-subagents exposes these lifecycle events on Pi's shared event bus.
   for (const type of ['subagent:async-started','subagent:async-complete','subagent:foreground-complete','subagent:child-status','subagents:rpc:v1:ready']) {
