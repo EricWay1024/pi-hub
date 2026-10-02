@@ -37,6 +37,8 @@
 .app .output-list { gap: 6px; }
 .app .output-list-item { padding: 6px 8px; }
 .app .thinking { padding: 7px 10px; margin: 7px 0; }
+.app .reasoning-brief { margin: 6px 0 8px; color: #637268; font-size: 12px; line-height: 1.65; }
+.app .reasoning-brief p { margin: 0; }
 .app .message-queue { padding: 10px 0; }
 .app .queued-message { padding: 11px 14px; margin: 7px 0; }
 .app .queued-message-label { margin-bottom: 6px; }
