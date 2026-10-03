@@ -2,19 +2,19 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { commandList, filterCommands, slashQuery, type SlashCommand } from '../shared/commands';
 
 interface Props {
-  agentId: string; sessionId?: string; connected: boolean; managed: boolean;
+  agentId: string; sessionId?: string; connected: boolean; managed: boolean; engine?: 'pi' | 'codex';
   value: string; placeholder: string;
   onChange: (value: string) => void; onSubmit: () => void;
   loadCommands: () => Promise<SlashCommand[]>;
 }
-export function SlashComposer({ agentId, sessionId, connected, managed, value, placeholder, onChange, onSubmit, loadCommands }: Props) {
+export function SlashComposer({ agentId, sessionId, connected, managed, engine = 'pi', value, placeholder, onChange, onSubmit, loadCommands }: Props) {
   const input = useRef<HTMLTextAreaElement>(null), listId = useId();
   const target = `${agentId}:${sessionId || ''}`;
-  const [registry, setRegistry] = useState<{ target: string; commands: SlashCommand[] }>({ target, commands: commandList([]) });
+  const [registry, setRegistry] = useState<{ target: string; commands: SlashCommand[] }>({ target, commands: commandList([], engine) });
   const [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [active, setActive] = useState(0), [cursor, setCursor] = useState(value.length), [dismissed, setDismissed] = useState<string | null>(null);
   const generation = useRef(0);
-  const commands = registry.target === target ? registry.commands : commandList([]);
+  const commands = registry.target === target ? registry.commands : commandList([], engine);
   const query = slashQuery(value, cursor);
   const open = query !== null && dismissed !== value;
   const matches = filterCommands(commands, query || '');
@@ -30,10 +30,10 @@ export function SlashComposer({ agentId, sessionId, connected, managed, value, p
     finally { if (version === generation.current) setLoading(false); }
   }
   useEffect(() => {
-    setRegistry({ target, commands: commandList([]) }); setError(''); setActive(0);
+    setRegistry({ target, commands: commandList([], engine) }); setError(''); setActive(0);
     if (connected) void refresh(); else setLoading(false);
     return () => { generation.current++; };
-  }, [target, connected, loadCommands]);
+  }, [target, connected, loadCommands, engine]);
   useEffect(() => { setActive(0); }, [value, registry]);
   useEffect(() => { setCursor(input.current?.selectionStart ?? value.length); }, [value]);
   useEffect(() => {

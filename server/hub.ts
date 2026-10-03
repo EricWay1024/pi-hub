@@ -9,6 +9,7 @@ import { applyEvent, emptyAgent, type AgentState, type RecordData } from '../sha
 import { checkPassword, equalSecret, type Config } from './config.js';
 import { historyPage, messageKey, MESSAGE_PAGE_SIZE, visibleMessages } from '../shared/history.js';
 import { savedHistoryPage } from './history.js';
+import { CodexAgent } from './codex.js';
 import { sameAttachedSession } from '../shared/agent-identity.js';
 import { hashRecovery, newEnrollment, recoveryCodes, SESSION_LIFETIME, validTotpStep, verifySecondFactor } from './two-factor.js';
 import { hostname } from 'node:os';
@@ -32,6 +33,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
   const agents = new Map<string, AgentState>();
   const connectors = new Map<string, WebSocket>();
   const children = new Map<string, ChildProcessWithoutNullStreams>();
+  const codex = new Map<string, CodexAgent>();
   const browsers = new Set<WebSocket>();
   const sessions = new Map<string, number>();
   const browserSessions = new Map<WebSocket, string>();
@@ -112,6 +114,8 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
     if (state && event.type !== 'response') { applyEvent(state, event); dirty.add(id); }
   }
   function request(id: string, command: RecordData): Promise<RecordData> {
+    const adapter = codex.get(id);
+    if (adapter) return adapter.command(command);
     const child = children.get(id), ws = connectors.get(id);
     if (!agents.get(id)?.online || (!child && !ws)) return Promise.reject(new Error('Agent is offline'));
     const requestId = randomUUID(), wasBusy = agents.get(id)!.busy;
@@ -138,12 +142,17 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
       } else send(ws!, { type: 'command', command: record });
     });
   }
-  async function launch(cwd: string, name: string) {
-    if (children.size >= 12) throw new Error('Maximum 12 managed agents');
+  async function launch(cwd: string, name: string, engine: 'pi' | 'codex' = 'pi') {
+    if (children.size + [...codex.values()].filter(adapter => adapter.active).length >= 12) throw new Error('Maximum 12 managed agents');
     const directory = await allowedDirectory(config.projectsRoot, cwd);
     const id = randomUUID(), state = emptyAgent(id);
-    Object.assign(state, { cwd: directory, name: name.slice(0, 100) || path.basename(directory), managed: true, host: hostname() });
+    Object.assign(state, { cwd: directory, name: name.slice(0, 100) || path.basename(directory), managed: true, host: hostname(), engine });
     agents.set(id, state);
+    if (engine === 'codex') {
+      state.online = false;
+      const adapter = new CodexAgent(state, () => dirty.add(id)); codex.set(id, adapter);
+      try { await adapter.start(); return id; } catch (e) { adapter.stop(); codex.delete(id); agents.delete(id); dirty.delete(id); throw e; }
+    }
     const child = spawn(process.env.PI_HUB_PI_BIN || 'pi', ['--mode', 'rpc', '--name', state.name, '-e', path.join(root, 'extensions/hub.ts')], {
       cwd: directory, env: { ...process.env, PI_HUB_OBSERVER_ID: id, PI_WEB_UI_DISABLED: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -258,13 +267,15 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
           const before = url.searchParams.get('before') || undefined;
           if (before && before.length > 300) return json(res, 400, { error: 'Invalid history cursor' });
           const sessionFile = state.sessionFile;
+          if (state.engine === 'codex') return json(res, 200, codex.get(state.id)?.active ? await codex.get(state.id)!.history(before) : { ...historyPage(state.messages, before), limited: true, sessionId: state.sessionId });
           const page = sessionFile ? await savedHistoryPage(sessionFile, before) : historyPage(state.messages, before);
           return json(res, 200, { ...page, sessionFile, sessionId: state.sessionId, limited: !sessionFile });
         }
         if (url.pathname === '/api/agents' && req.method === 'POST') {
           const b = await body(req);
           if (typeof b.cwd !== 'string' || (b.name !== undefined && typeof b.name !== 'string')) return json(res, 400, { error: 'Invalid project/name' });
-          return json(res, 201, { id: await launch(b.cwd, b.name || '') });
+          if (b.engine !== undefined && !['pi', 'codex'].includes(b.engine)) return json(res, 400, { error: 'Unknown agent engine' });
+          return json(res, 201, { id: await launch(b.cwd, b.name || '', b.engine || 'pi') });
         }
         return json(res, 404, { error: 'Not found' });
       }
@@ -333,6 +344,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
         const id = r.agentId;
         if (typeof id !== 'string' || !agents.has(id)) throw new Error('Unknown agent');
         if (r.type === 'stop') {
+          if (codex.has(id)) { codex.get(id)!.stop(); send(ws, { type: 'reply', id: r.id, success: true }); return; }
           const child = children.get(id); if (!child) throw new Error('Only managed agents can be stopped');
           child.stdin.end(); setTimeout(() => { if (children.get(id) === child) child.kill('SIGTERM'); }, 5000).unref();
           send(ws, { type: 'reply', id: r.id, success: true }); return;
@@ -341,7 +353,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
         const allowed = ['prompt', 'steer', 'follow_up', 'abort', 'get_state', 'get_messages', 'get_session_stats', 'get_available_models', 'set_model', 'set_thinking_level', 'set_session_name', 'compact', 'get_commands', 'extension_ui_response'];
         if (!allowed.includes(r.command.type)) throw new Error('Unsupported command');
         if (['prompt','steer','follow_up'].includes(r.command.type) && typeof r.command.message !== 'string') throw new Error('Message required');
-        if (r.command.type === 'extension_ui_response') {
+        if (r.command.type === 'extension_ui_response' && !codex.has(id)) {
           const state = agents.get(id)!;
           if (!state.dialogs[r.command.id]) throw new Error('Unknown dialog');
           const child = children.get(id); if (!child) throw new Error('Terminal dialogs must be answered in terminal');
@@ -351,9 +363,11 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
         const result = await request(id, r.command);
         if (result.success) {
           const state = agents.get(id)!;
-          if (r.command.type === 'set_session_name') state.name = r.command.name;
-          if (r.command.type === 'set_model') state.model = r.command.modelId;
-          if (r.command.type === 'set_thinking_level') state.thinking = r.command.level;
+          if (state.engine !== 'codex') {
+            if (r.command.type === 'set_session_name') state.name = r.command.name;
+            if (r.command.type === 'set_model') state.model = r.command.modelId;
+            if (r.command.type === 'set_thinking_level') state.thinking = r.command.level;
+          }
           dirty.add(id);
         }
         send(ws, { ...result, type: 'reply', id: r.id });
@@ -379,6 +393,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
     clearInterval(flush); clearInterval(heartbeat);
     for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ type: 'response', success: false, error: 'Hub shutting down' }); } pending.clear();
     for (const ws of [...wss.clients, ...agentWss.clients]) ws.terminate();
+    for (const adapter of codex.values()) adapter.stop();
     for (const child of children.values()) { child.stdin.end(); child.kill('SIGTERM'); }
     wss.close(); agentWss.close();
     await new Promise<void>(resolve => server.close(() => resolve()));

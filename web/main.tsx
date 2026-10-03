@@ -7,6 +7,7 @@ import { MessageQueue } from './MessageQueue';
 import { UsageMeter } from './UsageMeter';
 import { useReadingMode } from './useReadingMode';
 import { AgentList } from './AgentList';
+import { CodexDialog } from './CodexDialog';
 import { SecuritySettings } from './SecuritySettings';
 import { agentStatus, type AgentState, type RecordData } from '../shared/state';
 import { mergeMessages, messageKey, MESSAGE_PAGE_SIZE, visibleMessages } from '../shared/history';
@@ -28,6 +29,7 @@ async function api(route: string, data?: unknown) {
 }
 function Dialog({ dialog, respond }: { dialog: RecordData; respond: (r: RecordData) => void }) {
   const [value, setValue] = useState(dialog.prefill || '');
+  if (dialog.method === 'codex') return <CodexDialog dialog={dialog} respond={respond}/>;
   return <section className="dialog"><div className="eyebrow">Agent needs your input</div><h3>{dialog.title}</h3><p>{dialog.message}</p>
     {dialog.method === 'select' ? <div className="row wrap">{dialog.options.map((v: string) => <button key={v} onClick={() => respond({ value: v })}>{v}</button>)}</div> : dialog.method === 'confirm' ? <div className="row"><button onClick={() => respond({ confirmed: true })}>Allow</button><button onClick={() => respond({ confirmed: false })}>Deny</button></div> : <><textarea aria-label={dialog.title} placeholder={dialog.placeholder} value={value} onChange={e => setValue(e.target.value)}/><button onClick={() => respond({ value })}>Reply</button></>}
     <button className="subtle" onClick={() => respond({ cancelled: true })}>Dismiss</button>
@@ -41,6 +43,7 @@ function App() {
   const [agents, setAgents] = useState<Record<string, AgentState>>({}), [selected, setSelected] = useState('');
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false), [behavior, setBehavior] = useState('steer');
   const [images, setImages] = useState<RecordData[]>([]), [attachments, setAttachments] = useState<string[]>([]);
+  const [launchEngine, setLaunchEngine] = useState<'pi' | 'codex'>('pi');
   const [projects, setProjects] = useState<RecordData[]>([]), [launching, setLaunching] = useState(false), [project, setProject] = useState('');
   const [panel, setPanel] = useState(false), [mobileList, setMobileList] = useState(false), [models, setModels] = useState<RecordData[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -83,7 +86,7 @@ function App() {
   const currentSelection = useRef(selected); currentSelection.current = selected;
   async function fetchCommands(id: string): Promise<SlashCommand[]> {
     const response = await rpc({ type: 'get_commands' }, id);
-    const commands = commandList(response.data?.commands);
+    const commands = commandList(response.data?.commands, agentsRef.current[id]?.engine);
     commandCache.current.set(id, commands);
     return commands;
   }
@@ -198,7 +201,8 @@ function App() {
       }
       case 'thinking':
         if (!args) { setPanel(true); break; }
-        if (!['off','minimal','low','medium','high','xhigh','max'].includes(args)) throw new Error('Use /thinking off|minimal|low|medium|high|xhigh|max');
+        const levels = agentsRef.current[target]?.engine === 'codex' ? agentsRef.current[target].thinkingLevels || [] : ['off','minimal','low','medium','high','xhigh','max'];
+        if (!levels.includes(args)) throw new Error(`Available thinking levels: ${levels.join(', ')}`);
         await rpc({ type: 'set_thinking_level', level: args }, target); break;
       case 'name': {
         const name = args || window.prompt('Agent name', agentsRef.current[target]?.name);
@@ -226,16 +230,16 @@ function App() {
       const slash = parseSlashCommand(text);
       if (text.trimStart().startsWith('/') && !slash) throw new Error('Choose a slash command first.');
       if (slash) {
-        let commands = commandCache.current.get(target) || commandList([]);
+        let commands = commandCache.current.get(target) || commandList([], agentsRef.current[target]?.engine);
         let command = commands.find(c => c.name === slash.name);
         if (!command) { commands = await fetchCommands(target); command = commands.find(c => c.name === slash.name); }
-        if (!command) throw new Error(`Unknown command /${slash.name}. Refresh the list or run /reload in Pi.`);
+        if (!command) throw new Error(`Unknown command /${slash.name}. Refresh the command list${agent.engine === 'codex' ? '; Codex CLI-only commands are unavailable here' : ' or run /reload in Pi'}.`);
         if (command.unavailable) throw new Error(`/${slash.name} requires the Pi CLI. ${command.description}`);
         if (command.source === 'web') {
           if (imgs.length) throw new Error('Web control commands do not accept attachments.');
           if (!await webCommand(slash.name, slash.args, target)) return;
         } else await rpc({ type: 'prompt', message: text.trimStart(), images: imgs, streamingBehavior: behavior }, target);
-      } else await rpc({ type: 'prompt', message: text || '(see attached image)', images: imgs, streamingBehavior: behavior }, target);
+      } else await rpc({ type: 'prompt', message: text || '(see attached image)', images: imgs, streamingBehavior: agent.engine === 'codex' ? 'steer' : behavior }, target);
       if (currentSelection.current === target) { setDraft(''); setImages([]); setAttachments([]); }
     } catch (e) { setError((e as Error).message); } finally { setSending(false); }
   }
@@ -274,29 +278,29 @@ function App() {
       <div className="content"><div className="conversation" ref={conversation} onScroll={e => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160; }}>
         {!agent ? <div className="empty"><span className="logo">π</span><h1>Room to think.</h1><p>Start a new agent or connect a terminal session.<br/>Math, code, and long-running work—all in one place.</p><code>pi -e ./extensions/hub.ts</code></div> : <div className="transcript">{!agent.messages?.length && <div className="empty"><h1>What are we exploring?</h1><p>Write naturally. Mathematics is rendered with KaTeX.<br/>Use $…$ inline, or $$…$$ for display equations.</p><div className="example"><RichText text={'$$H_n(X) = \\ker \\partial_n / \\operatorname{im}\\partial_{n+1}$$'}/></div></div>}
           {(hasEarlier || history) && !!displayedMessages.length && <div className="history-controls">
-            <small>{hasEarlier ? `Showing ${displayedMessages.length} messages · older messages hidden` : history?.limited ? 'Beginning of available history · no saved session linked; try /reload in Pi' : 'Beginning of conversation'}</small>
+            <small>{hasEarlier ? `Showing ${displayedMessages.length} messages · older messages hidden` : history?.limited ? agent.engine === 'codex' ? 'Stopped Codex · only buffered history available here; saved thread can be resumed in Codex CLI' : 'Beginning of available history · no saved session linked; try /reload in Pi' : 'Beginning of conversation'}</small>
             <div className="row">{hasEarlier && <button disabled={historyLoading[selected]} onClick={() => void showEarlier()}>{historyLoading[selected] ? 'Loading…' : 'Show earlier messages'}</button>}{history && <button className="subtle" onClick={backToLatest}>Back to latest {MESSAGE_PAGE_SIZE}</button>}</div>
           </div>}
-          <Transcript messages={displayedMessages} partial={agent.partial} tools={agent.tools}/>
+          <Transcript messages={displayedMessages} partial={agent.partial} tools={agent.tools} agentLabel={agent.engine === 'codex' ? 'Codex' : 'Pi'}/>
           {Object.values(agent.dialogs || {}).map(d => <Dialog key={d.id} dialog={d} respond={r => act({ type: 'extension_ui_response', id: d.id, ...r })}/>)}
           <MessageQueue queue={agent.queue}/>
-          {agent.online && (agent.busy || agent.compaction) && <div className="working" role="status"><span className="dot busy"/> {agent.compaction ? `${agentStatus(agent)} Summarizing context; your queued messages are preserved.` : 'Pi is working. You can steer or queue a follow-up.'}</div>}
+          {agent.online && (agent.busy || agent.compaction) && <div className="working" role="status"><span className="dot busy"/> {agent.compaction ? `${agentStatus(agent)} Summarizing context; your queued messages are preserved.` : agent.engine === 'codex' ? 'Codex is working. You can steer this turn.' : 'Pi is working. You can steer or queue a follow-up.'}</div>}
           </div>}
       </div>
       {panel && agent && <aside className="activity"><div className="row between"><h3>Control room</h3><button className="subtle" onClick={() => setPanel(false)}>×</button></div><small className="path">{agent.cwd}</small>
         <div className="row wrap"><button onClick={reading.toggle} title="Toggle full-screen reading (F11)">Reading mode (F11)</button><button onClick={exportTranscript}>Save transcript</button><button disabled={!connected || !agent.online || agent.busy} onClick={() => act({ type: 'compact' })}>Compact</button><button disabled={!connected || !agent.online} onClick={() => { const name = window.prompt('Agent name', agent.name); if (name?.trim()) act({ type: 'set_session_name', name: name.trim() }); }}>Rename</button></div>
-        <label>Thinking<select value={agent.thinking || 'medium'} onChange={e => act({ type: 'set_thinking_level', level: e.target.value })}>{['off','minimal','low','medium','high','xhigh','max'].map(l => <option key={l}>{l}</option>)}</select></label>
+        <label>Thinking<select aria-label="Thinking" disabled={!connected || !agent.online || agent.engine === 'codex' && agent.busy} value={agent.thinking || 'medium'} onChange={e => act({ type: 'set_thinking_level', level: e.target.value })}>{(agent.engine === 'codex' ? [...new Set([agent.thinking || 'medium', ...(agent.thinkingLevels || [])])] : ['off','minimal','low','medium','high','xhigh','max']).map(l => <option key={l}>{l}</option>)}</select></label>
         <button onClick={async () => { try { const r = await rpc({ type: 'get_available_models' }); setModels(r.data.models); } catch (e) { setError((e as Error).message); } }}>Change model</button>{!!models.length && <select aria-label="Model" value="" onChange={e => { const m = models[Number(e.target.value)]; act({ type: 'set_model', provider: m.provider, modelId: m.id }); setModels([]); }}><option value="" disabled>Select a model</option>{models.map((m, i) => <option key={i} value={i}>{m.provider} / {m.id}</option>)}</select>}
         <h4>Tools & background work</h4><ToolActivity tools={agent.tools || {}}/>
         <h4>Lifecycle & subagents</h4>{!(agent.activity || []).length && <p className="muted">Subagent events, retries, and extension notices appear here.</p>}<ActivityFeed events={agent.activity || []}/>
-        {agent.managed && <button className="danger" onClick={() => { if (confirm('Stop this managed Pi process? Its session remains saved on disk.')) void rpc({}, selected, 'stop').catch(e => setError(e.message)); }}>Stop agent process</button>}
+        {agent.managed && <button className="danger" onClick={() => { if (confirm('Stop this managed agent process? Its session remains saved on disk.')) void rpc({}, selected, 'stop').catch(e => setError(e.message)); }}>Stop agent process</button>}
       </aside>}
       </div>
-      {agent && <div className="composer"><div className="composer-box">{!!attachments.length && <div className="attachment-list">{attachments.join(' · ')} <button className="subtle" onClick={() => { setImages([]); setAttachments([]); }}>Clear images</button></div>}<SlashComposer key={selected} agentId={selected} sessionId={agent.sessionId} connected={connected && agent.online} managed={agent.managed} placeholder={agent.busy ? 'Steer the agent, or queue the next idea…' : 'Ask, explore, prove something… (/ for commands)'} value={draft} onChange={setDraft} onSubmit={() => void submit()} loadCommands={loadCommands}/><div className="row between"><div className="row"><input type="file" multiple ref={fileInput} hidden onChange={e => void attach(e.target.files)}/><button className="subtle" title="Attach images or text files" onClick={() => fileInput.current?.click()}>＋ Attach</button>{agent.busy && <select aria-label="Delivery mode" value={behavior} onChange={e => setBehavior(e.target.value)}><option value="steer">Steer now</option><option value="followUp">Follow up later</option></select>}</div><div className="row">{agent.busy && <button className="danger" onClick={() => act({ type: 'abort' })}>Abort</button>}<button className="primary" disabled={sending || !connected || !agent.online || (!draft.trim() && !images.length)} onClick={() => void submit()}>{sending ? 'Sending…' : agent.busy ? 'Queue ↑' : 'Send ↑'}</button></div></div></div><small>Ctrl / ⌘ + Enter to send</small></div>}
+      {agent && <div className="composer"><div className="composer-box">{!!attachments.length && <div className="attachment-list">{attachments.join(' · ')} <button className="subtle" onClick={() => { setImages([]); setAttachments([]); }}>Clear images</button></div>}<SlashComposer key={selected} agentId={selected} sessionId={agent.sessionId} connected={connected && agent.online} managed={agent.managed} engine={agent.engine} placeholder={agent.busy ? 'Steer the agent, or queue the next idea…' : 'Ask, explore, prove something… (/ for commands)'} value={draft} onChange={setDraft} onSubmit={() => void submit()} loadCommands={loadCommands}/><div className="row between"><div className="row"><input type="file" multiple ref={fileInput} hidden onChange={e => void attach(e.target.files)}/><button className="subtle" title="Attach images or text files" onClick={() => fileInput.current?.click()}>＋ Attach</button>{agent.busy && agent.engine !== 'codex' && <select aria-label="Delivery mode" value={behavior} onChange={e => setBehavior(e.target.value)}><option value="steer">Steer now</option><option value="followUp">Follow up later</option></select>}</div><div className="row">{agent.busy && <button className="danger" onClick={() => act({ type: 'abort' })}>Abort</button>}<button className="primary" disabled={sending || !connected || !agent.online || (!draft.trim() && !images.length)} onClick={() => void submit()}>{sending ? 'Sending…' : agent.busy ? agent.engine === 'codex' ? 'Steer ↑' : 'Queue ↑' : 'Send ↑'}</button></div></div></div><small>Ctrl / ⌘ + Enter to send</small></div>}
     </main>
     {security && <SecuritySettings enabled={twoFactor} onEnabled={() => setTwoFactor(true)} onClose={() => setSecurity(false)}/>}
     {commandHelp && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setCommandHelp(null); }}><section className="modal command-help" role="dialog" aria-modal="true" aria-labelledby="command-help-title" onKeyDown={e => { if (e.key === 'Escape') setCommandHelp(null); }}><div className="row between"><h2 id="command-help-title">Commands</h2><button autoFocus className="subtle" aria-label="Close command help" onClick={() => setCommandHelp(null)}>×</button></div><p>Type / to browse. ↑ ↓ navigate; Tab or Enter completes; Ctrl / ⌘ + Enter sends. Shift + Enter adds a line.</p><div className="command-help-list">{commandHelp.map(c => <div key={c.name}><strong>/{c.name}</strong><small>{c.unavailable ? 'CLI only' : c.source}</small><p>{c.description}</p></div>)}</div><p>Registered extensions, skills, and templates come from the selected agent. Attached-agent extension dialogs may still require its terminal.</p></section></div>}
-    {launching && <div className="modal-backdrop"><form className="modal" onSubmit={async e => { e.preventDefault(); try { const r = await api('agents', { cwd: project }); setSelected(r.id); setLaunching(false); } catch (e) { setError((e as Error).message); } }}><div className="eyebrow">New conversation</div><h2>Give an agent a workspace.</h2><label>Project<select value={project} onChange={e => setProject(e.target.value)}>{projects.map(p => <option key={p.path} value={p.path}>{p.name}</option>)}</select></label><label>Directory<input required value={project} onChange={e => setProject(e.target.value)}/></label><p>Uses your existing Pi login and extensions. The process runs independently of this browser.</p><div className="row"><button type="button" onClick={() => setLaunching(false)}>Cancel</button><button className="primary">Start agent →</button></div></form></div>}
+    {launching && <div className="modal-backdrop"><form className="modal" onSubmit={async e => { e.preventDefault(); try { const r = await api('agents', { cwd: project, engine: launchEngine }); setSelected(r.id); setLaunching(false); } catch (e) { setError((e as Error).message); } }}><div className="eyebrow">New conversation</div><h2>Give an agent a workspace.</h2><label>Agent engine<select value={launchEngine} onChange={e => setLaunchEngine(e.target.value as 'pi' | 'codex')}><option value="pi">Pi</option><option value="codex">Codex CLI</option></select></label><label>Project<select value={project} onChange={e => setProject(e.target.value)}>{projects.map(p => <option key={p.path} value={p.path}>{p.name}</option>)}</select></label><label>Directory<input required value={project} onChange={e => setProject(e.target.value)}/></label><p>{launchEngine === 'codex' ? 'Uses your local Codex login and configured sandbox/approval rules. Starts a private app-server; existing Codex terminals and shared daemon are not touched.' : 'Uses your existing Pi login and extensions.'} The process runs independently of this browser.</p><div className="row"><button type="button" onClick={() => setLaunching(false)}>Cancel</button><button className="primary">Start agent →</button></div></form></div>}
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

@@ -6,7 +6,7 @@ A self-hosted browser/PWA control room for [Pi](https://pi.dev) agents, with a d
 
 ## Features
 
-- Attach terminal Pi sessions, or launch separate browser-managed RPC agents.
+- Attach terminal Pi sessions, or launch separate browser-managed **Pi or Codex CLI** agents.
 - Live Markdown, code, tables, and KaTeX mathematics, including `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`.
 - Readable paired tool calls/results, file paths, shell output, edit diffs, and structured subagent reports. Empty reasoning is hidden; assistant/tool rounds share one response label.
 - Visible steering/follow-up queues, abort, compaction, renaming, model/thinking controls, and supported RPC extension dialogs.
@@ -120,6 +120,16 @@ Back up the SSH configuration, validate with `sudo sshd -t`, and reload (not res
 Systemd does not keep Windows awake or automatically start WSL after Windows reboot. The site is unavailable while the local host/network is offline; keepalives improve recovery, not offline availability. macOS users can run `npm start` under their own process supervisor.
 
 **Restarting the hub stops browser-managed Pi processes.** Check the inventory first. Attached terminal agents are independent and reconnect. Managed-process restoration and a historical-session picker are not implemented.
+
+## Codex CLI agents (first integration)
+
+Install and sign in to the Codex CLI locally, then choose **Codex CLI** in **New agent → Agent engine**. Tested against **Codex 0.159.2**. The service must find `codex` on its PATH; the installer includes `~/.local/bin`, or set `PI_HUB_CODEX_BIN` to its executable. Codex is optional; Pi-only operation is unchanged.
+
+Each Hub-launched Codex conversation owns a private `codex app-server --stdio` process, using native local login/configuration and preserving configured sandbox, approvals and hook trust. The browser never connects directly to an exposed Codex server. Command/file approvals offer **Approve once**, **Deny**, and **Cancel**; input questions are supported. Other server-request types fail closed without granting permissions.
+
+Supported: streamed messages/reasoning, shell/file/MCP/subagent tool cards, steering with an active-turn precondition, interrupt, rename, manual/native compaction status, context battery and native paginated item history. Model and reasoning choices come from Codex's catalog and apply to the next submitted turn. Pi defaults do not configure Codex. Pi extension commands and Codex CLI-only commands are not forwarded as model prompts. Follow-up queues are not yet supported for Codex; use steering.
+
+Stopping one Codex agent stops only its private app-server, not existing terminal sessions or the shared Codex daemon. Hub restart stops all Hub-managed processes, including Codex. Saved threads can be resumed with the Codex CLI; attaching/resuming existing Codex threads in Hub and sharing its daemon are **not yet implemented**. Offline Codex agents expose only their buffered history. Lost acknowledgements are never automatically retried.
 
 ## Usage and limitations
 

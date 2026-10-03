@@ -16,7 +16,7 @@ quote_unit() {
 }
 mkdir -p "$HOME/.config/systemd/user"
 # Generated units contain executable paths, never passwords or registration tokens.
-printf '[Unit]\nDescription=Pi Hub workspace\nAfter=network.target\n\n[Service]\nWorkingDirectory=%s\nExecStart=%s %s %s\nEnvironment=%s\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$ROOT")" "$(quote_unit "$NODE")" "$(quote_unit "$ROOT/node_modules/tsx/dist/cli.mjs")" "$(quote_unit "$ROOT/server/cli.ts")" "$(quote_unit "PATH=$NODE_DIR:/usr/local/bin:/usr/bin:/bin")" > "$HOME/.config/systemd/user/pi-hub.service"
+printf '[Unit]\nDescription=Pi Hub workspace\nAfter=network.target\n\n[Service]\nWorkingDirectory=%s\nExecStart=%s %s %s\nEnvironment=%s\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$ROOT")" "$(quote_unit "$NODE")" "$(quote_unit "$ROOT/node_modules/tsx/dist/cli.mjs")" "$(quote_unit "$ROOT/server/cli.ts")" "$(quote_unit "PATH=$NODE_DIR:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin")" > "$HOME/.config/systemd/user/pi-hub.service"
 if [[ -n "${PI_HUB_CONFIG:-}" ]]; then
   printf '\n# Custom configuration path (not its contents).\n[Service]\nEnvironment=%s\n' "$(quote_unit "PI_HUB_CONFIG=$PI_HUB_CONFIG")" >> "$HOME/.config/systemd/user/pi-hub.service"
 fi

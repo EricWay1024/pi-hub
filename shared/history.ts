@@ -5,6 +5,7 @@ export function visibleMessages(messages: RecordData[]): RecordData[] {
 }
 // Stable across RPC events and saved-session snapshots; no giant content in URL cursors.
 export function messageKey(message: RecordData): string {
+  if (typeof message.codexItemId === 'string') return `codex:${message.codexItemId}:${message.role}`;
   const text = JSON.stringify([message.content, message.summary, message.command, message.output, message.errorMessage]);
   let a = 2166136261, b = 5381;
   for (let i = 0; i < text.length; i++) { a = Math.imul(a ^ text.charCodeAt(i), 16777619); b = Math.imul(b, 33) ^ text.charCodeAt(i); }

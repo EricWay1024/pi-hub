@@ -25,8 +25,8 @@ const TERMINAL_COMMANDS: SlashCommand[] = [
   { name: 'clone', description: 'Clone the current session in the CLI', source: 'terminal', unavailable: true },
   { name: 'quit', description: 'Quit Pi in the CLI; use Stop agent for managed agents', source: 'terminal', unavailable: true },
 ];
-export function commandList(discovered: unknown): SlashCommand[] {
-  const list = new Map([...WEB_COMMANDS, ...TERMINAL_COMMANDS].map(c => [c.name, c]));
+export function commandList(discovered: unknown, engine: 'pi' | 'codex' = 'pi'): SlashCommand[] {
+  const list = new Map([...WEB_COMMANDS, ...(engine === 'codex' ? [] : TERMINAL_COMMANDS)].map(c => [c.name, c]));
   if (Array.isArray(discovered)) for (const c of discovered) {
     if (typeof c?.name !== 'string' || !c.name || /\s/.test(c.name) || c.name.startsWith('/')) continue;
     if (!['extension', 'prompt', 'skill'].includes(c.source)) continue;

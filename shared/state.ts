@@ -3,6 +3,7 @@ export type RecordData = Record<string, any>;
 export interface AgentState {
   id: string; name: string; cwd: string; host: string; managed: boolean;
   online: boolean; busy: boolean; model?: string; thinking?: string;
+  engine?: 'pi' | 'codex'; thinkingLevels?: string[];
   compaction?: { reason: 'manual' | 'threshold' | 'overflow'; startedAt: number };
   sessionFile?: string; sessionId?: string; totalMessageCount?: number; hasEarlierMessages?: boolean;
   messages: RecordData[]; partial?: RecordData;

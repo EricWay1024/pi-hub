@@ -3,7 +3,7 @@ import type { RecordData } from '../shared/state';
 import { contentBlocks, hasText, responseGroups } from '../shared/output';
 import { RichText } from './RichText';
 import { OutputText, ToolCard } from './ToolOutput';
-export function Transcript({ messages, partial, tools = {} }: { messages: RecordData[]; partial?: RecordData; tools?: Record<string, RecordData> }) {
+export function Transcript({ messages, partial, tools = {}, agentLabel = 'Pi' }: { messages: RecordData[]; partial?: RecordData; tools?: Record<string, RecordData>; agentLabel?: string }) {
   const groups = useMemo(() => responseGroups(messages, partial), [messages, partial]);
   const calls = new Set<string>(), results = new Map<string, RecordData>();
   for (const message of [...messages, ...(partial ? [partial] : [])]) {
@@ -33,7 +33,7 @@ export function Transcript({ messages, partial, tools = {} }: { messages: Record
     const rendered = group.messages.filter(({ message }) => message.role !== 'toolResult' || !calls.has(message.toolCallId));
     if (!rendered.length) return null;
     return <section className={group.actor === 'user' ? 'user-turn' : 'agent-turn'} key={group.key}>
-      <div className="eyebrow turn-label">{group.actor === 'user' ? 'You' : 'Pi'}</div>
+      <div className="eyebrow turn-label">{group.actor === 'user' ? 'You' : agentLabel}</div>
       {rendered.map(({ key, message }) => <div className="message-row" key={key}>{body(message)}</div>)}
     </section>;
   })}</>;
