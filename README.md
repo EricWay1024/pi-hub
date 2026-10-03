@@ -119,9 +119,17 @@ Back up the SSH configuration, validate with `sudo sshd -t`, and reload (not res
 
 Systemd does not keep Windows awake or automatically start WSL after Windows reboot. The site is unavailable while the local host/network is offline; keepalives improve recovery, not offline availability. macOS users can run `npm start` under their own process supervisor.
 
-**Restarting the hub stops browser-managed Pi processes.** Check the inventory first. Attached terminal agents are independent and reconnect. Managed-process restoration and a historical-session picker are not implemented.
+**Restarting the hub stops browser-managed Pi and Codex processes.** Check the inventory first. Attached Pi terminal agents are independent and reconnect. Use **Resume sessions** to reopen saved conversations; processes are never automatically restored.
 
-## Codex CLI agents (first integration)
+## Resume saved sessions
+
+Choose **Resume sessions** in the sidebar (or `/resume`) to browse saved **Pi and Codex** conversations, newest first. Select a workspace or leave **All workspaces** selected; an optional directory field supports nested workspaces. Filter by engine and search session names, first-message previews, folders or IDs. Results page in batches of 50. The index is capped at the newest 2,000 sessions per filter; choose a narrower workspace to reach older conversations.
+
+Resume preserves the saved conversation rather than starting a new one, loads its latest 40 messages, and keeps older history available on demand. Pi uses its saved session file and Codex uses `thread/resume`; legacy Codex CLI history uses native hydrated turns when item pagination is unavailable. No user prompt is sent automatically. Existing local agents connected to Hub are opened instead of duplicated, and concurrent resume requests for the same saved session are coalesced.
+
+This is **saved-history resume, not attachment to an unconnected live terminal**. Finish or close that conversation in its other terminal first. Hub cannot reliably detect every external process that might be using the same saved session. Workspaces must still exist inside `projectsRoot`. Only authenticated metadata is listed; browsers cannot submit arbitrary session-file paths. Pi discovery covers default storage, configured global/environment storage and first-level projects' custom `sessionDir` settings; select a nested workspace explicitly for its custom storage. Missing optional Codex installation does not block Pi discovery.
+
+## Codex CLI agents
 
 Install and sign in to the Codex CLI locally, then choose **Codex CLI** in **New agent → Agent engine**. Tested against **Codex 0.159.2**. The service must find `codex` on its PATH; the installer includes `~/.local/bin`, or set `PI_HUB_CODEX_BIN` to its executable. Codex is optional; Pi-only operation is unchanged.
 
@@ -129,11 +137,11 @@ Each Hub-launched Codex conversation owns a private `codex app-server --stdio` p
 
 Supported: streamed messages/reasoning, shell/file/MCP/subagent tool cards, steering with an active-turn precondition, interrupt, rename, manual/native compaction status, context battery and native paginated item history. Model and reasoning choices come from Codex's catalog and apply to the next submitted turn. Pi defaults do not configure Codex. Pi extension commands and Codex CLI-only commands are not forwarded as model prompts. Follow-up queues are not yet supported for Codex; use steering.
 
-Stopping one Codex agent stops only its private app-server, not existing terminal sessions or the shared Codex daemon. Hub restart stops all Hub-managed processes, including Codex. Saved threads can be resumed with the Codex CLI; attaching/resuming existing Codex threads in Hub and sharing its daemon are **not yet implemented**. Offline Codex agents expose only their buffered history. Lost acknowledgements are never automatically retried.
+Stopping one Codex agent stops only its private app-server, not existing terminal sessions or the shared Codex daemon. Hub restart stops all Hub-managed processes, including Codex. Saved threads can be resumed through **Resume sessions** or the Codex CLI. Attaching to an external live Codex process or sharing its daemon is **not yet implemented**. Offline Codex agents expose only their buffered history. Lost acknowledgements are never automatically retried.
 
 ## Usage and limitations
 
-Type `/` to browse commands. Arrow keys navigate; Tab/Enter completes; Esc dismisses; Ctrl/⌘ + Enter sends. Click suggestions on mobile. Web equivalents include `/help`, `/model`, `/thinking`, `/name`, `/compact`, `/abort`, `/copy`, `/export`, `/session`, and `/settings`. `/export` downloads displayed messages as JSON. CLI-only commands such as `/reload`, `/login`, `/tree`, and `/resume` still require the terminal.
+Type `/` to browse commands. Arrow keys navigate; Tab/Enter completes; Esc dismisses; Ctrl/⌘ + Enter sends. Click suggestions on mobile. Web equivalents include `/help`, `/model`, `/thinking`, `/name`, `/compact`, `/abort`, `/copy`, `/export`, `/session`, `/resume`, and `/settings`. `/export` downloads displayed messages as JSON. CLI-only commands such as `/reload`, `/login`, and `/tree` still require the terminal.
 
 Attached extension dialogs may also require their terminal; managed RPC agents support standard extension dialogs, not arbitrary terminal custom UI. Subagent/provider tools and lifecycle events are presented, but the hub is not a separate scheduler or cross-session messaging service.
 

@@ -1,0 +1,14 @@
+.session-picker { width: min(760px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 40px); overflow-y: auto; }
+.session-picker h2, .session-picker > p { margin: 0; }
+.session-picker label { margin: 0; }
+.session-picker > small { display: block; line-height: 1.45; }
+.session-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .6fr); gap: 10px; }
+.saved-session-list { min-height: 60px; }
+.saved-session { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid #e1e6d9; }
+.saved-session-copy { min-width: 0; flex: 1; }
+.saved-session-copy strong, .saved-session-copy small, .saved-session-copy code { display: block; overflow-wrap: anywhere; }
+.saved-session-copy small { margin: 4px 0; }
+.saved-session-copy code { font-size: 11px; }
+.saved-session-copy p { margin: 5px 0 0; font-size: 13px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.saved-session > button { flex-shrink: 0; }
+@media (max-width: 760px) { .session-picker { padding: 16px; } .saved-session { gap: 8px; } .saved-session > button { font-size: 12px; padding: 7px 9px; } }

@@ -10,6 +10,7 @@ import { checkPassword, equalSecret, type Config } from './config.js';
 import { historyPage, messageKey, MESSAGE_PAGE_SIZE, visibleMessages } from '../shared/history.js';
 import { savedHistoryPage } from './history.js';
 import { CodexAgent } from './codex.js';
+import { SessionLibrary } from './sessions.js';
 import { sameAttachedSession } from '../shared/agent-identity.js';
 import { hashRecovery, newEnrollment, recoveryCodes, SESSION_LIFETIME, validTotpStep, verifySecondFactor } from './two-factor.js';
 import { hostname } from 'node:os';
@@ -34,6 +35,8 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
   const connectors = new Map<string, WebSocket>();
   const children = new Map<string, ChildProcessWithoutNullStreams>();
   const codex = new Map<string, CodexAgent>();
+  const library = new SessionLibrary(config.projectsRoot, cwd => allowedDirectory(config.projectsRoot, cwd));
+  const resuming = new Map<string, Promise<string>>();
   const browsers = new Set<WebSocket>();
   const sessions = new Map<string, number>();
   const browserSessions = new Map<WebSocket, string>();
@@ -142,18 +145,20 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
       } else send(ws!, { type: 'command', command: record });
     });
   }
-  async function launch(cwd: string, name: string, engine: 'pi' | 'codex' = 'pi') {
-    if (children.size + [...codex.values()].filter(adapter => adapter.active).length >= 12) throw new Error('Maximum 12 managed agents');
+  async function launch(cwd: string, name: string, engine: 'pi' | 'codex' = 'pi', resume?: ReturnType<SessionLibrary['choice']>) {
     const directory = await allowedDirectory(config.projectsRoot, cwd);
+    if (closing) throw new Error('Hub shutting down');
+    if (children.size + [...codex.values()].filter(adapter => adapter.active).length >= 12) throw new Error('Maximum 12 managed agents');
     const id = randomUUID(), state = emptyAgent(id);
     Object.assign(state, { cwd: directory, name: name.slice(0, 100) || path.basename(directory), managed: true, host: hostname(), engine });
+    if (resume) { state.sessionId = resume.id; state.sessionFile = resume.file; }
     agents.set(id, state);
     if (engine === 'codex') {
       state.online = false;
       const adapter = new CodexAgent(state, () => dirty.add(id)); codex.set(id, adapter);
-      try { await adapter.start(); return id; } catch (e) { adapter.stop(); codex.delete(id); agents.delete(id); dirty.delete(id); throw e; }
+      try { await adapter.start(resume?.id); return id; } catch (e) { adapter.stop(); codex.delete(id); agents.delete(id); dirty.delete(id); throw e; }
     }
-    const child = spawn(process.env.PI_HUB_PI_BIN || 'pi', ['--mode', 'rpc', '--name', state.name, '-e', path.join(root, 'extensions/hub.ts')], {
+    const child = spawn(process.env.PI_HUB_PI_BIN || 'pi', ['--mode', 'rpc', ...(resume ? ['--session', resume.file!] : ['--name', state.name]), '-e', path.join(root, 'extensions/hub.ts')], {
       cwd: directory, env: { ...process.env, PI_HUB_OBSERVER_ID: id, PI_WEB_UI_DISABLED: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
     });
     children.set(id, child);
@@ -175,10 +180,31 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
     child.on('exit', (code, signal) => { record(id, { type: 'diagnostic', text: `Pi exited (${code ?? signal})` }); offline(); });
     dirty.add(id);
     // State is requested through RPC, without model calls.
-    request(id, { type: 'get_state' }).then(r => {
-      if (r.success) { state.model = r.data?.model?.id; state.thinking = r.data?.thinkingLevel; state.sessionFile = r.data?.sessionFile; state.sessionId = r.data?.sessionId; dirty.add(id); }
-    }).catch(error => record(id, { type: 'diagnostic', text: error.message }));
+    const ready = request(id, { type: 'get_state' }).then(async r => {
+      if (!r.success) throw new Error(r.error || 'Pi startup failed');
+      if (resume && r.data?.sessionId !== resume.id) throw new Error('Pi opened a different session; resume cancelled');
+      state.model = r.data?.model?.id; state.thinking = r.data?.thinkingLevel; state.sessionFile = r.data?.sessionFile; state.sessionId = r.data?.sessionId;
+      if (r.data?.sessionName) state.name = r.data.sessionName;
+      if (resume) { const page = await savedHistoryPage(resume.file!); state.messages = page.messages; state.totalMessageCount = page.messages.length + (page.hasMore ? 1 : 0); }
+      dirty.add(id);
+    });
+    if (resume) {
+      try { await ready; } catch (e) { child.stdin.end(); child.kill('SIGTERM'); children.delete(id); agents.delete(id); dirty.delete(id); throw e; }
+    } else void ready.catch(error => record(id, { type: 'diagnostic', text: error.message }));
     return id;
+  }
+  async function resumeSession(key: string) {
+    const choice = library.choice(key), identity = `${choice.engine}:${choice.file || choice.id}:${choice.cwd}`;
+    const inFlight = resuming.get(identity); if (inFlight) return inFlight;
+    const open = async () => {
+      for (const a of agents.values()) {
+        if (!a.online || a.host !== hostname() || (a.engine || 'pi') !== choice.engine || a.sessionId !== choice.id) continue;
+        try { if (await allowedDirectory(config.projectsRoot, a.cwd) === choice.cwd && (choice.engine === 'codex' || a.sessionFile && await realpath(a.sessionFile) === choice.file)) return a; } catch { /* Stale metadata. */ }
+      }
+    };
+    const work = (async () => { let running = await open(); if (running) return running.id; await library.validate(choice); running = await open(); return running?.id || launch(choice.cwd, choice.name, choice.engine, choice); })();
+    resuming.set(identity, work);
+    try { return await work; } finally { resuming.delete(identity); }
   }
   const json = (res: http.ServerResponse, status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
   async function body(req: http.IncomingMessage, limit = maxBytes): Promise<RecordData> {
@@ -259,6 +285,17 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
         if (url.pathname === '/api/projects' && req.method === 'GET') {
           const dirs = await readdir(config.projectsRoot, { withFileTypes: true });
           return json(res, 200, { root: config.projectsRoot, projects: dirs.filter(d => d.isDirectory() && !d.name.startsWith('.')).map(d => ({ name: d.name, path: path.join(config.projectsRoot, d.name) })) });
+        }
+        if (url.pathname === '/api/sessions' && req.method === 'GET') {
+          const engine = url.searchParams.get('engine') || 'all', cwd = url.searchParams.get('cwd') || undefined, cursor = url.searchParams.get('cursor') || undefined, query = url.searchParams.get('q') || '';
+          if (!['all', 'pi', 'codex'].includes(engine) || (cwd?.length || 0) > 4096 || (cursor?.length || 0) > 100 || query.length > 100) return json(res, 400, { error: 'Invalid session filters' });
+          const page = await library.page(engine as 'all' | 'pi' | 'codex', cwd, cursor, query, url.searchParams.get('refresh') === '1');
+          return json(res, 200, { ...page, sessions: page.sessions.map(s => ({ ...s, agentId: [...agents.values()].find(a => a.online && a.host === hostname() && (a.engine || 'pi') === s.engine && a.sessionId === s.id && a.cwd === s.cwd && (s.engine === 'codex' || a.sessionFile === library.choice(s.key).file))?.id })) });
+        }
+        if (url.pathname === '/api/sessions/resume' && req.method === 'POST') {
+          const b = await body(req, 1024);
+          if (typeof b.key !== 'string' || b.key.length > 100) return json(res, 400, { error: 'Invalid session choice' });
+          return json(res, 200, { id: await resumeSession(b.key) });
         }
         const historyMatch = /^\/api\/agents\/([^/]+)\/history$/.exec(url.pathname);
         if (historyMatch && req.method === 'GET') {
@@ -390,7 +427,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
   for (const group of [wss, agentWss]) group.on('connection', ws => { alive.add(ws); ws.on('pong', () => alive.add(ws)); });
   return { server, agents, async close() {
     if (closing) return; closing = true;
-    clearInterval(flush); clearInterval(heartbeat);
+    clearInterval(flush); clearInterval(heartbeat); library.close();
     for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ type: 'response', success: false, error: 'Hub shutting down' }); } pending.clear();
     for (const ws of [...wss.clients, ...agentWss.clients]) ws.terminate();
     for (const adapter of codex.values()) adapter.stop();

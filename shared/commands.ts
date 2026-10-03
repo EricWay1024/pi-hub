@@ -13,13 +13,13 @@ export const WEB_COMMANDS: SlashCommand[] = [
   { name: 'export', description: 'Download the displayed transcript as JSON', source: 'web' },
   { name: 'session', description: 'Open agent activity and session details', source: 'web' },
   { name: 'settings', description: 'Open model and thinking controls', source: 'web' },
+  { name: 'resume', description: 'Browse and resume saved Pi or Codex sessions', source: 'web' },
 ];
 const TERMINAL_COMMANDS: SlashCommand[] = [
   { name: 'reload', description: 'Reload Pi resources in the CLI', source: 'terminal', unavailable: true },
   { name: 'login', description: 'Configure provider authentication in the CLI', source: 'terminal', unavailable: true },
   { name: 'logout', description: 'Remove provider authentication in the CLI', source: 'terminal', unavailable: true },
   { name: 'tree', description: 'Navigate branches in the CLI', source: 'terminal', unavailable: true },
-  { name: 'resume', description: 'Choose a saved session in the CLI', source: 'terminal', unavailable: true },
   { name: 'new', description: 'Start a fresh CLI session; use New agent in the web instead', source: 'terminal', unavailable: true },
   { name: 'fork', description: 'Fork from an earlier message in the CLI', source: 'terminal', unavailable: true },
   { name: 'clone', description: 'Clone the current session in the CLI', source: 'terminal', unavailable: true },

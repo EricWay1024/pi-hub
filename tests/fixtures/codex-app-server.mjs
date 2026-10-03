@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
-const threadId = 'thread-test';
+let threadId = 'thread-test';
+const saved = { id: 'thread-saved', name: 'Saved Codex', preview: 'Earlier Codex conversation', cwd: process.env.PI_HUB_CODEX_TEST_CWD || process.cwd(), createdAt: 1700000000, updatedAt: 1700000100, status: { type: process.env.PI_HUB_CODEX_TEST_STATUS || 'notLoaded' }, model: 'test-model', reasoningEffort: 'high', historyMode: process.env.PI_HUB_CODEX_TEST_LEGACY ? 'legacy' : 'paginated' };
 const items = Array.from({ length: 90 }, (_, i) => ({ turnId: 'turn-' + Math.floor(i / 3), item: { type: 'agentMessage', id: 'item-' + i, text: 'Saved message ' + i } }));
 const send = r => process.stdout.write(JSON.stringify(r) + '\n');
 const event = (method, params) => send({ method, params: { threadId, ...params } });
@@ -13,6 +14,9 @@ createInterface({ input: process.stdin }).on('line', line => {
   switch (r.method) {
     case 'initialize': reply({ userAgent: 'fake-codex' }); break;
     case 'initialized': break;
+    case 'thread/list': reply({ data: [saved, { ...saved, id: 'outside', cwd: '/' }].filter(t => !p.cwd || t.cwd === p.cwd), nextCursor: null }); break;
+    case 'thread/read': reply({ thread: { ...saved, turns: p.includeTurns ? [{ id: 'legacy-turn', items: items.map(e => e.item) }] : [] } }); break;
+    case 'thread/resume': threadId = p.threadId; reply({ thread: { ...saved, id: threadId, turns: [] }, model: 'test-model', reasoningEffort: 'high' }); break;
     case 'thread/start': reply({ thread: { id: threadId, reasoningEffort: 'medium' }, model: 'test-model', reasoningEffort: 'medium' }); break;
     case 'thread/name/set': reply({}); event('thread/name/updated', { threadName: p.name }); break;
     case 'model/list': reply({ data: [{ id: 'test-model', model: 'test-model', defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] }], nextCursor: null }); break;

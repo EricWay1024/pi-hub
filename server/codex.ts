@@ -1,8 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import type { AgentState, RecordData } from '../shared/state.js';
 import { codexMessages } from '../shared/codex.js';
-import { messageKey, MESSAGE_PAGE_SIZE } from '../shared/history.js';
+import { historyPage, mergeMessages, messageKey, MESSAGE_PAGE_SIZE } from '../shared/history.js';
 
 /** One private stdio app-server per Hub-owned agent. Never touches the shared daemon. */
 export class CodexAgent {
@@ -17,6 +18,7 @@ export class CodexAgent {
   private manualCompact = false;
   private commandInFlight = false;
   private lifecycleRevision = 0;
+  private legacyHistory = false;
   get active() { return !this.closed; }
   constructor(private state: AgentState, private changed: () => void) {
     this.child = spawn(process.env.PI_HUB_CODEX_BIN || 'codex', ['app-server', '--stdio'], { cwd: state.cwd, env: { ...process.env, PI_HUB_OBSERVER_ID: undefined }, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -57,13 +59,27 @@ export class CodexAgent {
     this.child.kill('SIGTERM'); const timer = setTimeout(() => { if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill('SIGKILL'); }, 5000); timer.unref();
   }
   private touch() { this.state.updatedAt = Date.now(); this.changed(); }
-  async start() {
+  async initialize() {
     await this.rpc('initialize', { clientInfo: { name: 'pi_hub', title: 'Pi Hub', version: '0.1.0' }, capabilities: null });
     this.write({ method: 'initialized' });
+  }
+  async savedThreads(cursor?: string, cwd?: string) {
+    return this.rpc('thread/list', { limit: 100, sortKey: 'updated_at', sortDirection: 'desc', sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'], ...(cursor ? { cursor } : {}), ...(cwd ? { cwd } : {}) });
+  }
+  async readThread(threadId: string, includeTurns = false) { return (await this.rpc('thread/read', { threadId, includeTurns })).thread as RecordData; }
+  async start(resumeId?: string) {
+    await this.initialize();
     // No policy overrides: preserve Codex's configured sandbox, approvals, hooks and login.
-    const result = await this.rpc('thread/start', { cwd: this.state.cwd });
+    if (resumeId) this.state.sessionId = resumeId;
+    const result = await this.rpc(resumeId ? 'thread/resume' : 'thread/start', resumeId ? { threadId: resumeId, excludeTurns: true } : { cwd: this.state.cwd });
+    this.legacyHistory = result.thread.historyMode === 'legacy';
     this.state.sessionId = result.thread.id; this.state.model = result.model; this.state.thinking = result.reasoningEffort || result.thread.reasoningEffort || 'medium';
-    await this.rpc('thread/name/set', { threadId: this.state.sessionId, name: this.state.name });
+    if (resumeId) {
+      if (result.thread.id !== resumeId || await realpath(result.cwd || result.thread.cwd) !== this.state.cwd) throw new Error('Codex resumed a different session or workspace; resume cancelled');
+      this.state.name = result.thread.name || this.state.name;
+      const page = await this.history(); this.state.messages = page.messages;
+      this.state.totalMessageCount = page.messages.length + (page.hasMore ? 1 : 0);
+    } else await this.rpc('thread/name/set', { threadId: this.state.sessionId, name: this.state.name });
     const models = await this.catalog();
     const model = models.find(m => (m.model || m.id) === this.state.model);
     this.state.thinkingLevels = (model?.supportedReasoningEfforts || []).map((e: RecordData) => e.reasoningEffort);
@@ -78,7 +94,7 @@ export class CodexAgent {
       const keys = Object.keys(this.state.tools); if (keys.length > 100) delete this.state.tools[keys[0]];
     }
     while (this.items.size > 300) this.items.delete(this.items.keys().next().value!);
-    this.state.messages = [...this.items.values()].flatMap(codexMessages);
+    this.state.messages = mergeMessages(this.state.messages, [...this.items.values()].flatMap(codexMessages)).slice(-300);
     this.state.totalMessageCount = Math.max(this.state.totalMessageCount || 0, this.state.messages.length);
     this.state.hasEarlierMessages = true; this.touch();
   }
@@ -232,6 +248,12 @@ export class CodexAgent {
   /** Native opaque cursors cross turns; never use Pi's session parser. */
   private historyAnchors = new Map<string, { cursor?: string; itemId: string }>();
   async history(before?: string) {
+    if (this.legacyHistory) {
+      // Older CLI rollouts do not implement thread/items/list; use their native hydrated turns.
+      const thread = await this.readThread(this.state.sessionId!, true);
+      const messages = (thread.turns || []).flatMap((turn: RecordData) => (turn.items || []).flatMap(codexMessages));
+      return { ...historyPage(messages, before), sessionId: this.state.sessionId };
+    }
     const cached = before ? this.historyAnchors.get(before) : undefined;
     const itemId = cached?.itemId || this.state.messages.find(m => messageKey(m) === before)?.codexItemId;
     let cursor = cached?.cursor, found = !before, messages: RecordData[] = [], hasMore = false;

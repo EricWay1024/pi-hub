@@ -9,6 +9,7 @@ import { useReadingMode } from './useReadingMode';
 import { AgentList } from './AgentList';
 import { CodexDialog } from './CodexDialog';
 import { AbortButton } from './AbortButton';
+import { SessionPicker } from './SessionPicker';
 import { SecuritySettings } from './SecuritySettings';
 import { agentStatus, type AgentState, type RecordData } from '../shared/state';
 import { mergeMessages, messageKey, MESSAGE_PAGE_SIZE, visibleMessages } from '../shared/history';
@@ -23,6 +24,7 @@ import './output.css';
 import './sidebar.css';
 import './compact.css';
 import './reading.css';
+import './sessions.css';
 
 async function api(route: string, data?: unknown) {
   const res = await fetch('/api/' + route, { method: data === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json' }, ...(data !== undefined ? { body: JSON.stringify(data) } : {}) });
@@ -45,6 +47,7 @@ function App() {
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false), [behavior, setBehavior] = useState('steer');
   const [images, setImages] = useState<RecordData[]>([]), [attachments, setAttachments] = useState<string[]>([]);
   const [launchEngine, setLaunchEngine] = useState<'pi' | 'codex'>('pi');
+  const [savedSessions, setSavedSessions] = useState(false);
   const [projects, setProjects] = useState<RecordData[]>([]), [launching, setLaunching] = useState(false), [project, setProject] = useState('');
   const [panel, setPanel] = useState(false), [mobileList, setMobileList] = useState(false), [models, setModels] = useState<RecordData[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -75,7 +78,7 @@ function App() {
   const [histories, setHistories] = useState<Record<string, HistoryView | undefined>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
   const agent = agents[selected];
-  const reading = useReadingMode(authed && !!agent && !security && !launching && !commandHelp);
+  const reading = useReadingMode(authed && !!agent && !security && !launching && !savedSessions && !commandHelp);
   useEffect(() => { if (reading.active) { setPanel(false); setMobileList(false); } }, [reading.active]);
   const agentsRef = useRef(agents); agentsRef.current = agents;
   const history = histories[selected]?.session === historySession(agent) ? histories[selected] : undefined;
@@ -192,6 +195,7 @@ function App() {
     switch (name) {
       case 'help': setCommandHelp(await fetchCommands(target)); break;
       case 'settings': case 'session': setPanel(true); break;
+      case 'resume': { const r = await api('projects'); setProjects(r.projects); setSavedSessions(true); setPanel(false); break; }
       case 'model': {
         const response = await rpc({ type: 'get_available_models' }, target);
         const available: RecordData[] = response.data.models;
@@ -271,6 +275,7 @@ function App() {
     <aside id="agent-sidebar" aria-label="Agents and workspace navigation" className={'sidebar ' + (mobileList ? 'shown' : '')}><div className="brand"><span className="logo">π</span><div><strong>Pi Hub</strong><small>YOUR WORKSPACE</small></div><button className="mobile-only subtle" aria-label="Close sidebar" onClick={closeMobileSidebar}>×</button></div>
       <div className="connection"><span className={'dot ' + (connected ? 'online' : '')}/>{connected ? 'Connected to workspace' : 'Reconnecting…'}</div>
       <button className="new-agent" disabled={!connected} onClick={async () => { try { const r = await api('projects'); setProjects(r.projects); setProject(r.projects[0]?.path || r.root); setMobileList(false); setLaunching(true); } catch (e) { setError((e as Error).message); } }}>＋ New agent</button>
+      <button className="new-agent" disabled={!connected} onClick={async () => { try { const r = await api('projects'); setProjects(r.projects); setMobileList(false); setSavedSessions(true); } catch (e) { setError((e as Error).message); } }}>↻ Resume sessions</button>
       <AgentList agents={agents} selected={selected} select={id => { setSelected(id); closeMobileSidebar(); scrollAnchor.current = null; follow.current = true; requestAnimationFrame(() => { if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight; }); }}/>
       <footer><button className={'subtle security-link ' + (twoFactor ? '' : 'warning')} onClick={() => { setMobileList(false); setSecurity(true); }}>Security · 2FA {twoFactor ? 'on' : 'off'}</button><button className="subtle" onClick={async () => { try { await api('logout', {}); setAuthed(false); setMobileList(false); setAgents({}); setHistories({}); } catch (e) { setError((e as Error).message); } }}>Sign out ↗</button></footer>
     </aside>
@@ -279,7 +284,7 @@ function App() {
       <div className="content"><div className="conversation" ref={conversation} onScroll={e => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160; }}>
         {!agent ? <div className="empty"><span className="logo">π</span><h1>Room to think.</h1><p>Start a new agent or connect a terminal session.<br/>Math, code, and long-running work—all in one place.</p><code>pi -e ./extensions/hub.ts</code></div> : <div className="transcript">{!agent.messages?.length && <div className="empty"><h1>What are we exploring?</h1><p>Write naturally. Mathematics is rendered with KaTeX.<br/>Use $…$ inline, or $$…$$ for display equations.</p><div className="example"><RichText text={'$$H_n(X) = \\ker \\partial_n / \\operatorname{im}\\partial_{n+1}$$'}/></div></div>}
           {(hasEarlier || history) && !!displayedMessages.length && <div className="history-controls">
-            <small>{hasEarlier ? `Showing ${displayedMessages.length} messages · older messages hidden` : history?.limited ? agent.engine === 'codex' ? 'Stopped Codex · only buffered history available here; saved thread can be resumed in Codex CLI' : 'Beginning of available history · no saved session linked; try /reload in Pi' : 'Beginning of conversation'}</small>
+            <small>{hasEarlier ? `Showing ${displayedMessages.length} messages · older messages hidden` : history?.limited ? agent.engine === 'codex' ? 'Stopped Codex · only buffered history available here; use Resume sessions to reopen its saved thread' : 'Beginning of available history · no saved session linked; try /reload in Pi' : 'Beginning of conversation'}</small>
             <div className="row">{hasEarlier && <button disabled={historyLoading[selected]} onClick={() => void showEarlier()}>{historyLoading[selected] ? 'Loading…' : 'Show earlier messages'}</button>}{history && <button className="subtle" onClick={backToLatest}>Back to latest {MESSAGE_PAGE_SIZE}</button>}</div>
           </div>}
           <Transcript messages={displayedMessages} partial={agent.partial} tools={agent.tools} agentLabel={agent.engine === 'codex' ? 'Codex' : 'Pi'}/>
@@ -299,6 +304,7 @@ function App() {
       </div>
       {agent && <div className="composer"><div className="composer-box">{!!attachments.length && <div className="attachment-list">{attachments.join(' · ')} <button className="subtle" onClick={() => { setImages([]); setAttachments([]); }}>Clear images</button></div>}<SlashComposer key={selected} agentId={selected} sessionId={agent.sessionId} connected={connected && agent.online} managed={agent.managed} engine={agent.engine} placeholder={agent.busy ? 'Steer the agent, or queue the next idea…' : 'Ask, explore, prove something… (/ for commands)'} value={draft} onChange={setDraft} onSubmit={() => void submit()} loadCommands={loadCommands}/><div className="row between"><div className="row"><input type="file" multiple ref={fileInput} hidden onChange={e => void attach(e.target.files)}/><button className="subtle" title="Attach images or text files" onClick={() => fileInput.current?.click()}>＋ Attach</button>{agent.busy && agent.engine !== 'codex' && <select aria-label="Delivery mode" value={behavior} onChange={e => setBehavior(e.target.value)}><option value="steer">Steer now</option><option value="followUp">Follow up later</option></select>}</div><div className="row">{agent.busy && <AbortButton key={agent.id} agentId={agent.id} busy={agent.busy} disabled={!connected || !agent.online} onAbort={() => act({ type: 'abort' })}/>}<button className="primary" disabled={sending || !connected || !agent.online || (!draft.trim() && !images.length)} onClick={() => void submit()}>{sending ? 'Sending…' : agent.busy ? agent.engine === 'codex' ? 'Steer ↑' : 'Queue ↑' : 'Send ↑'}</button></div></div></div><small>Ctrl / ⌘ + Enter to send</small></div>}
     </main>
+    {savedSessions && <SessionPicker projects={projects as { name: string; path: string }[]} initialWorkspace={agent?.cwd || ''} onClose={() => setSavedSessions(false)} onResume={id => { setSelected(id); setSavedSessions(false); setPanel(false); scrollAnchor.current = null; follow.current = true; requestAnimationFrame(() => { if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight; }); }}/>}
     {security && <SecuritySettings enabled={twoFactor} onEnabled={() => setTwoFactor(true)} onClose={() => setSecurity(false)}/>}
     {commandHelp && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setCommandHelp(null); }}><section className="modal command-help" role="dialog" aria-modal="true" aria-labelledby="command-help-title" onKeyDown={e => { if (e.key === 'Escape') setCommandHelp(null); }}><div className="row between"><h2 id="command-help-title">Commands</h2><button autoFocus className="subtle" aria-label="Close command help" onClick={() => setCommandHelp(null)}>×</button></div><p>Type / to browse. ↑ ↓ navigate; Tab or Enter completes; Ctrl / ⌘ + Enter sends. Shift + Enter adds a line.</p><div className="command-help-list">{commandHelp.map(c => <div key={c.name}><strong>/{c.name}</strong><small>{c.unavailable ? 'CLI only' : c.source}</small><p>{c.description}</p></div>)}</div><p>Registered extensions, skills, and templates come from the selected agent. Attached-agent extension dialogs may still require its terminal.</p></section></div>}
     {launching && <div className="modal-backdrop"><form className="modal" onSubmit={async e => { e.preventDefault(); try { const r = await api('agents', { cwd: project, engine: launchEngine }); setSelected(r.id); setLaunching(false); } catch (e) { setError((e as Error).message); } }}><div className="eyebrow">New conversation</div><h2>Give an agent a workspace.</h2><label>Agent engine<select value={launchEngine} onChange={e => setLaunchEngine(e.target.value as 'pi' | 'codex')}><option value="pi">Pi</option><option value="codex">Codex CLI</option></select></label><label>Project<select value={project} onChange={e => setProject(e.target.value)}>{projects.map(p => <option key={p.path} value={p.path}>{p.name}</option>)}</select></label><label>Directory<input required value={project} onChange={e => setProject(e.target.value)}/></label><p>{launchEngine === 'codex' ? 'Uses your local Codex login and configured sandbox/approval rules. Starts a private app-server; existing Codex terminals and shared daemon are not touched.' : 'Uses your existing Pi login and extensions.'} The process runs independently of this browser.</p><div className="row"><button type="button" onClick={() => setLaunching(false)}>Cancel</button><button className="primary">Start agent →</button></div></form></div>}
