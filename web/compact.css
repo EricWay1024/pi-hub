@@ -64,6 +64,7 @@
 .app .composer-box { padding: 9px; }
 .app .composer textarea { min-height: 54px; padding: 6px; }
 .app .composer small { margin-top: 6px; }
+.app .abort-confirming { background: #fff2da; border-color: #d7b05e; color: #9e4c2d; }
 .app .workspace-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .app .workspace-meta { display: flex; flex: 1; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 8px; color: #637268; font-size: 11px; line-height: 1.5; }
 .app .workspace-meta small { min-width: 0; font-size: inherit; line-height: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
