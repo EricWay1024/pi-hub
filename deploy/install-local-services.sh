@@ -22,7 +22,7 @@ if [[ -n "${PI_HUB_CONFIG:-}" ]]; then
 fi
 if [[ -n "$SSH_HOST" ]]; then
   SSH="$(command -v ssh)"
-  printf '[Unit]\nDescription=Pi Hub reverse SSH tunnel\nAfter=network.target pi-hub.service\nWants=pi-hub.service\n\n[Service]\nExecStart=%s -NT -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -R 127.0.0.1:%s:127.0.0.1:%s %s\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$SSH")" "$PORT" "$PORT" "$(quote_unit "$SSH_HOST")" > "$HOME/.config/systemd/user/pi-hub-tunnel.service"
+  printf '[Unit]\nDescription=Pi Hub reverse SSH tunnel\nAfter=network.target pi-hub.service\nWants=pi-hub.service\n\n[Service]\nExecStart=%s -NT -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -R 127.0.0.1:%s:127.0.0.1:%s %s\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$SSH")" "$PORT" "$PORT" "$(quote_unit "$SSH_HOST")" > "$HOME/.config/systemd/user/pi-hub-tunnel.service"
 fi
 systemctl --user daemon-reload
 systemctl --user enable --now pi-hub.service

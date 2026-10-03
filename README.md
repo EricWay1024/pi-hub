@@ -107,7 +107,17 @@ systemctl --user status pi-hub pi-hub-tunnel
 journalctl --user -u pi-hub -u pi-hub-tunnel -f
 ```
 
-The optional tunnel uses the configured hub port on both ends and does not copy provider credentials. Systemd does not keep Windows awake or automatically start WSL after Windows reboot. macOS users can run `npm start` under their own process supervisor.
+The optional tunnel uses the configured hub port on both ends and does not copy provider credentials. It uses a 10-second connection timeout and client-side keepalives. Also configure **server-side SSH keepalives on the VPS** so dead sessions release the forwarded port rather than blocking reconnection:
+
+```text
+# Global sshd settings (outside Match blocks):
+ClientAliveInterval 20
+ClientAliveCountMax 3
+```
+
+Back up the SSH configuration, validate with `sudo sshd -t`, and reload (not restart) the appropriate SSH service. Reconnect the tunnel for new settings to apply. These probes disconnect unresponsive clients, not healthy idle sessions; port cleanup can take about 80 seconds. A tunnel restart does not stop Pi agents. If a port stays occupied, inspect its listener and confirm the upstream is dead before terminating only that stale SSH session—never blindly kill all SSH processes.
+
+Systemd does not keep Windows awake or automatically start WSL after Windows reboot. The site is unavailable while the local host/network is offline; keepalives improve recovery, not offline availability. macOS users can run `npm start` under their own process supervisor.
 
 **Restarting the hub stops browser-managed Pi processes.** Check the inventory first. Attached terminal agents are independent and reconnect. Managed-process restoration and a historical-session picker are not implemented.
 
