@@ -149,7 +149,9 @@ Managed agents expose their native queue. Attached agents use observed input; ca
 
 The live recovery buffer is 300 messages per agent; snapshots contain the latest 40 plus 100 tool/activity records. Older pages follow the current ancestry in saved session files, not abandoned branches. `--no-session` runs cannot recover older history. If a command confirmation is lost, inspect history before resending: reconnect does not resend commands automatically.
 
-Attachments support images and text/source files (4 MB each). Arbitrary binary transfer is not exposed. Export saves the displayed transcript, not necessarily the entire conversation.
+Attachments support images and text/source files (4 MB each). Export saves the displayed transcript, not necessarily the entire conversation.
+
+Markdown links to local files open through an authenticated, read-only file endpoint. Relative paths resolve from the selected agent's workspace; absolute paths and local `file://` links work inside `projectsRoot`. Editor-style `:line:column` suffixes and `#Lline` anchors open the corresponding line in text previews. PDFs and raster images open inline; other binary files download. Text previews are limited to 2 MB / 20,000 lines, with larger text files downloaded instead; files above 50 MB are rejected. HTML, SVG, and source code are escaped, never executed. Symlink escapes, directories, files outside `projectsRoot`, and files that exist only in a remote/cloud sandbox are not served. Local file access requires the Hub backend to include this endpoint, so backend updates need a safely reviewed restart.
 
 Independent live agents are never merged by name or working directory. Attached IDs survive extension reloads; stale offline entries for the same host/session are pruned without deleting session files.
 

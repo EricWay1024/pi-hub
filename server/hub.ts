@@ -11,6 +11,7 @@ import { historyPage, messageKey, MESSAGE_PAGE_SIZE, visibleMessages } from '../
 import { savedHistoryPage } from './history.js';
 import { CodexAgent } from './codex.js';
 import { SessionLibrary } from './sessions.js';
+import { serveLocalFile } from './files.js';
 import { sameAttachedSession } from '../shared/agent-identity.js';
 import { hashRecovery, newEnrollment, recoveryCodes, SESSION_LIFETIME, validTotpStep, verifySecondFactor } from './two-factor.js';
 import { hostname } from 'node:os';
@@ -281,6 +282,12 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
           for (const [ws, sid] of browserSessions) if (sid === id) ws.close(1008, 'Signed out');
           res.setHeader('Set-Cookie', 'pi_hub=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
           return json(res, 200, { ok: true });
+        }
+        if (url.pathname === '/api/files' && req.method === 'GET') {
+          const id = url.searchParams.get('agentId') || '', state = agents.get(id);
+          if (!state) return json(res, 404, { error: 'Unknown agent; reopen its conversation to access local files' });
+          await serveLocalFile(config.projectsRoot, state.cwd, url.searchParams.get('path') || '', res, url.searchParams.get('download') === '1', id);
+          return;
         }
         if (url.pathname === '/api/projects' && req.method === 'GET') {
           const dirs = await readdir(config.projectsRoot, { withFileTypes: true });

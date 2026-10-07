@@ -1,5 +1,7 @@
-import React from 'react';
-import Markdown from 'react-markdown';
+import React, { createContext, useContext } from 'react';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
+import { fileLink } from '../shared/file-links';
+export const FileLinkContext = createContext<string | undefined>(undefined);
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -33,5 +35,6 @@ function promptLineBreaks() {
   };
 }
 export const RichText = React.memo(function RichText({ text, preserveLineBreaks = false }: { text: string; preserveLineBreaks?: boolean }) {
-  return <Markdown remarkPlugins={[remarkGfm, remarkMath, displayMath, ...(preserveLineBreaks ? [promptLineBreaks] : [])]} rehypePlugins={[[rehypeKatex, { strict: false, trust: false }]]} components={{ a: props => <a {...props} target="_blank" rel="noopener noreferrer"/> }}>{normalizeMath(text)}</Markdown>;
+  const agentId = useContext(FileLinkContext);
+  return <Markdown urlTransform={(url, key) => key === 'href' ? fileLink(url, agentId) || defaultUrlTransform(url) : defaultUrlTransform(url)} remarkPlugins={[remarkGfm, remarkMath, displayMath, ...(preserveLineBreaks ? [promptLineBreaks] : [])]} rehypePlugins={[[rehypeKatex, { strict: false, trust: false }]]} components={{ a: props => <a {...props} target="_blank" rel="noopener noreferrer"/> }}>{normalizeMath(text)}</Markdown>;
 });

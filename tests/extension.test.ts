@@ -21,7 +21,9 @@ test('extension attaches, forwards images, discovers and dispatches registered s
   const server = http.createServer(); const wss = new WebSocketServer({ server });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const config = createConfig('test-password-long', temp); config.port = (server.address() as any).port;
-  const old = process.env.PI_HUB_CONFIG; process.env.PI_HUB_CONFIG = path.join(temp, 'config.json');
+  const old = process.env.PI_HUB_CONFIG, oldObserver = process.env.PI_HUB_OBSERVER_ID;
+  delete process.env.PI_HUB_OBSERVER_ID; // Exercise terminal attachment even when tests run inside a Hub-managed Pi.
+  process.env.PI_HUB_CONFIG = path.join(temp, 'config.json');
   await writeFile(process.env.PI_HUB_CONFIG, JSON.stringify(config));
   const handlers = new Map<string, Function>(), sent: any[] = [];
   const pi: any = { on: (type: string, handler: Function) => handlers.set(type, handler), events: { on: () => {} }, registerCommand: () => {}, getSessionName: () => 'Attached', getThinkingLevel: () => 'medium', getCommands: () => [{ name: 'example', description: 'Example command', source: 'extension' }, { name: 'disconnect-test', source: 'extension' }], sendUserMessage: (...args: any[]) => { sent.push(args); if (args[0][0].text === '/disconnect-test') handlers.get('session_shutdown')?.(); } };
@@ -69,6 +71,7 @@ test('extension attaches, forwards images, discovers and dispatches registered s
     handlers.get('session_shutdown')?.(); for (const ws of wss.clients) ws.terminate();
     wss.close(); await new Promise<void>(resolve => server.close(() => resolve()));
     if (old === undefined) delete process.env.PI_HUB_CONFIG; else process.env.PI_HUB_CONFIG = old;
+    if (oldObserver === undefined) delete process.env.PI_HUB_OBSERVER_ID; else process.env.PI_HUB_OBSERVER_ID = oldObserver;
     await rm(temp, { recursive: true });
   }
 });
