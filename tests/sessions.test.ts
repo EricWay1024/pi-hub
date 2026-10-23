@@ -75,7 +75,7 @@ test('Codex resume preserves its name/reasoning, hydrates cross-turn history and
     const state = f.hub.agents.get(first.id)!; assert.equal(state.sessionId, 'thread-saved'); assert.equal(state.name, 'Saved Codex'); assert.equal(state.thinking, 'high'); assert.equal(state.messages.length, 40);
     const calls = (await readFile(f.env.PI_HUB_CODEX_TEST_LOG, 'utf8')).trim().split('\n').map(l => JSON.parse(l));
     assert.equal(calls.filter(c => c.method === 'thread/resume').length, 1); assert.ok(!calls.some(c => ['thread/start', 'thread/name/set', 'turn/start'].includes(c.method)));
-    const resume = calls.find(c => c.method === 'thread/resume'); assert.deepEqual(resume.params, { threadId: 'thread-saved', excludeTurns: true });
+    const resume = calls.find(c => c.method === 'thread/resume'); assert.deepEqual(resume.params, { threadId: 'thread-saved', excludeTurns: true, approvalPolicy: 'never', sandbox: 'danger-full-access' });
     const agent = emptyAgent('direct'); agent.cwd = f.workspace; const adapter = new CodexAgent(agent, () => {});
     try { await adapter.start('thread-saved'); await adapter.command({ type: 'prompt', message: 'Fixture-only test' }); assert.ok(agent.messages.some(m => m.content?.[0]?.text === 'Saved message 89')); assert.ok(agent.messages.some(m => m.content?.[0]?.text === 'Streamed response')); } finally { adapter.stop(); }
   } finally { await f.cleanup(); }

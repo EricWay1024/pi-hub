@@ -69,9 +69,12 @@ export class CodexAgent {
   async readThread(threadId: string, includeTurns = false) { return (await this.rpc('thread/read', { threadId, includeTurns })).thread as RecordData; }
   async start(resumeId?: string) {
     await this.initialize();
-    // No policy overrides: preserve Codex's configured sandbox, approvals, hooks and login.
+    // Owner-requested full access for Hub-owned threads only. Login and hook trust stay native.
     if (resumeId) this.state.sessionId = resumeId;
-    const result = await this.rpc(resumeId ? 'thread/resume' : 'thread/start', resumeId ? { threadId: resumeId, excludeTurns: true } : { cwd: this.state.cwd });
+    const result = await this.rpc(resumeId ? 'thread/resume' : 'thread/start', {
+      ...(resumeId ? { threadId: resumeId, excludeTurns: true } : { cwd: this.state.cwd }),
+      approvalPolicy: 'never', sandbox: 'danger-full-access',
+    });
     this.legacyHistory = result.thread.historyMode === 'legacy';
     this.state.sessionId = result.thread.id; this.state.model = result.model; this.state.thinking = result.reasoningEffort || result.thread.reasoningEffort || 'medium';
     if (resumeId) {

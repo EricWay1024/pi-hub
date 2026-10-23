@@ -54,7 +54,8 @@ test('Codex adapter maps controls, approvals, token usage and cross-turn paginat
     const older = await adapter.history(messageKey(latest.messages[0])); assert.equal(older.messages.length, 40); assert.equal(older.messages.at(-1)?.content[0].text, 'Saved message 49');
     const earliest = await adapter.history(messageKey(older.messages[0])); assert.equal(earliest.messages.length, 10); assert.equal(earliest.hasMore, false);
     const calls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    const start = calls.find(c => c.method === 'thread/start'); assert.equal(start.params.sandbox, undefined); assert.equal(start.params.approvalPolicy, undefined);
+    const start = calls.find(c => c.method === 'thread/start'); assert.equal(start.params.sandbox, 'danger-full-access'); assert.equal(start.params.approvalPolicy, 'never');
+    assert.equal(start.params.config, undefined); // Do not bypass hook trust or replace login/configuration.
     assert.equal(calls.filter(c => c.method === 'turn/start').length, 2); assert.equal(calls.find(c => c.method === 'turn/steer').params.expectedTurnId, 'turn-live-2');
     assert.ok(calls.some(c => c.id === 900 && c.result?.decision === 'accept'));
     const unconfirmed = adapter.command({ type: 'prompt', message: 'hang' });
