@@ -13,6 +13,7 @@ import { AbortButton } from './AbortButton';
 import { SessionPicker } from './SessionPicker';
 import { api, workspaceStatus } from './api';
 import { connectWorkspace } from './connection';
+import { AgentStreamDecoder } from '../shared/agent-stream';
 import { ConnectionNotice, RefreshButton, WorkspaceUnavailable } from './ConnectionNotice';
 import { SecuritySettings } from './SecuritySettings';
 import { agentStatus, type AgentState, type RecordData } from '../shared/state';
@@ -112,13 +113,14 @@ function App() {
   useEffect(() => {
     if (!authed) return;
     setConnected(false); setConnectionLost(false);
+    let decoder = new AgentStreamDecoder();
     const stop = connectWorkspace({
-      createSocket: () => new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`),
+      createSocket: () => { decoder = new AgentStreamDecoder(); return new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?updates=delta-v1`); },
       checkSession: () => api('me'),
       onSocket: ws => { wsRef.current = ws; },
       onOpen: () => { setConnected(true); setConnectionLost(false); },
       onMessage: event => {
-        const r = JSON.parse(event.data);
+        const r = decoder.decode(JSON.parse(event.data));
         if (r.type === 'agent') {
           setAgents(prev => ({ ...prev, [r.agent.id]: r.agent }));
           setHistories(prev => {

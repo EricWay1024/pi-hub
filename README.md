@@ -171,6 +171,8 @@ Managed agents expose their native queue. Attached agents use observed input; ca
 
 The live recovery buffer is 300 messages per agent; snapshots contain the latest 40 plus 100 tool/activity records. Older pages follow the current ancestry in saved session files, not abandoned branches. `--no-session` runs cannot recover older history. If a command confirmation is lost, inspect history before resending: reconnect does not resend commands automatically.
 
+Browser connections negotiate incremental updates (`/ws?updates=delta-v1`): after the initial snapshots, unchanged fields and historical tool results are not resent with every token. Pending snapshots are coalesced while a slow socket drains, instead of filling the send buffer and triggering a reconnect/full-download loop. Commands and replies are never coalesced or replayed. Full text/images remain intact; the initial sync can still be large. Older browser bundles receive rate-limited complete snapshots; refresh the browser page after an upgrade to enable deltas.
+
 Attachments support images and text/source files (4 MB each). Export saves the displayed transcript, not necessarily the entire conversation.
 
 Markdown links to local files open through an authenticated, read-only file endpoint. Relative paths resolve from the selected agent's workspace; absolute paths and local `file://` links work inside `projectsRoot`. Editor-style `:line:column` suffixes and `#Lline` anchors open the corresponding line in text previews. PDFs and raster images open inline; other binary files download. Text previews are limited to 2 MB / 20,000 lines, with larger text files downloaded instead; files above 50 MB are rejected. HTML, SVG, and source code are escaped, never executed. Symlink escapes, directories, files outside `projectsRoot`, and files that exist only in a remote/cloud sandbox are not served. Local file access requires the Hub backend to include this endpoint, so backend updates need a safely reviewed restart.
@@ -209,6 +211,19 @@ PI_HUB_TUNNEL_TEST_HOST=my-vps node --import tsx --test tests/tunnel-live.test.t
 ```
 
 Never use the production forwarding port for fault tests. Chromium fixtures have also checked mobile layout, 901-message pagination/scrolling, command completion, enrollment, recovery, and remembered-browser restart/revocation. GitHub Actions runs the test/typecheck/build/audit checks on pushes and pull requests.
+
+`tests/agent-stream.test.ts` checks exact delta reconstruction, deletions and session resets, and a real WebSocket with a paused reader and a 20 MB historical image payload. A separate 100-token test checks that unchanged 4 MB tool content is not repeated on each update.
+
+### Applying the browser transport fix without stopping agents
+
+Ordinary startup installs the adapter automatically. For an already-running pre-fix backend with active managed agents, the narrowly scoped maintenance command below installs only the outbound WebSocket adapter in place:
+
+```bash
+npm run build
+node deploy/apply-browser-stream-live.mjs HUB_BACKEND_NODE_PID
+```
+
+Use the Node process executing `server/cli.ts`, not its tsx supervisor. This Linux maintenance tool verifies the process and browser WebSocket server, bundles the reviewed adapter, briefly opens Node's **loopback-only inspector**, and closes a newly opened inspector afterwards. It does not replace authentication, mutate saved conversations, or restart Hub/agents. Never expose the inspector publicly. Refresh browser pages to load the new bundle. This is not a general hot-reload mechanism for other backend changes.
 
 The Pi development SDK's shrinkwrap can restore vulnerable `brace-expansion` despite npm's root override. The project locks an independent patched 5.0.12 dev dependency and copies it over the SDK copy before tests/checks/builds, without downloads or third-party install scripts. After updates, check both `npm ls brace-expansion` and `npm audit`; `npm run harden-deps` also runs the fix explicitly.
 

@@ -12,6 +12,7 @@ import { savedHistoryPage } from './history.js';
 import { CodexAgent } from './codex.js';
 import { SessionLibrary } from './sessions.js';
 import { serveLocalFile } from './files.js';
+import { installBrowserStream } from './browser-stream.js';
 import { sameAttachedSession } from '../shared/agent-identity.js';
 import { hashRecovery, newEnrollment, recoveryCodes, SESSION_LIFETIME, validTotpStep, verifySecondFactor } from './two-factor.js';
 import { hostname } from 'node:os';
@@ -76,6 +77,7 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
     res.setHeader('Set-Cookie', `pi_hub=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${lifetime / 1000}${config.origin?.startsWith('https:') ? '; Secure' : ''}`);
   }
   const wss = new WebSocketServer({ noServer: true, maxPayload: maxBytes });
+  installBrowserStream(wss);
   const agentWss = new WebSocketServer({ noServer: true, maxPayload: maxBytes });
   const sessionId = (req: http.IncomingMessage) => /(?:^|;\s*)pi_hub=([a-f0-9]+)/.exec(req.headers.cookie || '')?.[1] || '';
   const sessionExpiry = (id: string) => sessions.get(id) || trustedBrowser(config, id)?.expires || 0;
