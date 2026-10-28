@@ -14,7 +14,7 @@ A self-hosted browser/PWA control room for [Pi](https://pi.dev) agents, with a d
 - Slash autocomplete for the selected agent's extensions, skills, templates, and web controls. CLI-only commands are labelled rather than sent as model prompts.
 - Latest 40 messages initially; earlier history loads in batches with stable scrolling, including saved sessions beyond the live buffer.
 - Password + authenticator-app 2FA, one-use recovery codes, 12-hour ordinary sessions, and optional revocable **30-day trusted browsers**.
-- Drag-to-reorder agents, with keyboard/mobile move-up/down controls and order remembered per browser.
+- Drag-to-reorder agents, with keyboard/mobile move-up/down controls and order remembered per browser. Page reloads restore the last selected agent when it is still available; otherwise, the first available agent is selected.
 - Foldable agent sidebar (desktop choice remembered per browser), mobile drawer with Escape/backdrop dismissal, image/text attachments, transcript export, and an installable PWA shell. Conversations and API responses are not cached offline.
 - **F11 reading mode** (also under Activity): full-screen transcript with hidden sidebar/chrome. Move the pointer to the top/bottom edge to reveal the header/composer; controls auto-hide when you move away, except while focused. Escape or F11 exits. On touch screens, tap the transcript to briefly reveal controls. If native fullscreen is unavailable, the same reading layout fills the browser viewport.
 
@@ -95,7 +95,11 @@ Local credential changes prevent the running backend from overwriting those chan
 
 Keep the hub bound to loopback. Prefer a private VPN/tunnel. For public access, set `origin` in the private configuration to the exact HTTPS URL and put a trusted TLS reverse proxy in front of it. The proxy must overwrite `X-Real-IP` with the actual client IP. Block public access to `/agent`; registration is for local agents only.
 
-`deploy/nginx.example.conf` is a template: replace `hub.example.com` and TLS certificate paths with your own values. An SSH reverse tunnel can expose a remote **loopback-only** port; never forward it to `0.0.0.0`.
+`deploy/nginx.example.conf` is a template: replace `hub.example.com` and TLS certificate paths with your own values. Copy `deploy/unavailable.html` to `/var/www/pi-hub/unavailable.html` **on the proxy host** (readable by nginx), then validate with `nginx -t` before reloading nginx. The proxy serves this error page with a **Refresh** button when the backend/tunnel is unavailable, including for first-time visitors. Existing proxy installations need these template changes applied manually.
+
+The web app distinguishes an unreachable workspace from a signed-out session, shows a persistent connection warning when disconnected, and retries automatically. **Refresh** rechecks the connection and reloads live agent snapshots without clearing your draft or resending commands. A cached PWA shell can show the warning offline; a fresh browser cannot display the app if neither its server nor the proxy error page is reachable.
+
+An SSH reverse tunnel can expose a remote **loopback-only** port; never forward it to `0.0.0.0`.
 
 On Linux/WSL with user systemd:
 
@@ -106,6 +110,8 @@ PI_HUB_SSH_HOST=my-vps bash deploy/install-local-services.sh
 systemctl --user status pi-hub pi-hub-tunnel
 journalctl --user -u pi-hub -u pi-hub-tunnel -f
 ```
+
+**Current personal deployment (2026-10-26):** `https://rp.yw.je` now uses the NixOS VPS at `179.237.124.203`. The canonical WSL user unit remains `pi-hub-tunnel.service`, forwarding remote `127.0.0.1:7433` to WSL `127.0.0.1:7433` through SSH alias `truss` (`eric@179.237.124.203:22`). The old VPS is retained under alias `truss-old` (`95.179.224.75:1989`) as a temporary origin bridge, not a second hub. The migration did not restart `pi-hub.service` or move its data off WSL. The temporary `pi-hub-tunnel-nixos-staging.service` is disabled; do not enable it alongside the canonical unit because both claim the same forwarded port. Production proxy configuration, the `/agent` block, unavailable page, TLS renewal and SSH server keepalives are declared in `../move-vps/`; do not hand-edit generated NixOS nginx files.
 
 The optional tunnel uses the configured hub port on both ends and does not copy provider credentials. It uses a 10-second connection timeout and client-side keepalives. Also configure **server-side SSH keepalives on the VPS** so dead sessions release the forwarded port rather than blocking reconnection:
 

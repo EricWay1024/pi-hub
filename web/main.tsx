@@ -7,9 +7,13 @@ import { MessageQueue } from './MessageQueue';
 import { UsageMeter } from './UsageMeter';
 import { useReadingMode } from './useReadingMode';
 import { AgentList } from './AgentList';
+import { availableSelection, loadSelectedAgent, rememberSelectedAgent } from './agentSelection';
 import { CodexDialog } from './CodexDialog';
 import { AbortButton } from './AbortButton';
 import { SessionPicker } from './SessionPicker';
+import { api, workspaceStatus } from './api';
+import { connectWorkspace } from './connection';
+import { ConnectionNotice, RefreshButton, WorkspaceUnavailable } from './ConnectionNotice';
 import { SecuritySettings } from './SecuritySettings';
 import { agentStatus, type AgentState, type RecordData } from '../shared/state';
 import { mergeMessages, messageKey, MESSAGE_PAGE_SIZE, visibleMessages } from '../shared/history';
@@ -25,11 +29,7 @@ import './sidebar.css';
 import './compact.css';
 import './reading.css';
 import './sessions.css';
-
-async function api(route: string, data?: unknown) {
-  const res = await fetch('/api/' + route, { method: data === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json' }, ...(data !== undefined ? { body: JSON.stringify(data) } : {}) });
-  const result = await res.json(); if (!res.ok) throw Object.assign(new Error(result.error || 'Request failed'), { status: res.status }); return result;
-}
+import './connection.css';
 function Dialog({ dialog, respond }: { dialog: RecordData; respond: (r: RecordData) => void }) {
   const [value, setValue] = useState(dialog.prefill || '');
   if (dialog.method === 'codex') return <CodexDialog dialog={dialog} respond={respond}/>;
@@ -41,9 +41,15 @@ function Dialog({ dialog, respond }: { dialog: RecordData; respond: (r: RecordDa
 function App() {
   const [authed, setAuthed] = useState(false), [checking, setChecking] = useState(true), [password, setPassword] = useState('');
   const [error, setError] = useState(''), [connected, setConnected] = useState(false);
+  const [startupError, setStartupError] = useState(''), [startupVersion, setStartupVersion] = useState(0);
+  const [connectionLost, setConnectionLost] = useState(false), [connectionVersion, setConnectionVersion] = useState(0);
+  function refresh() {
+    if (authed) { setConnected(false); setConnectionLost(false); setConnectionVersion(v => v + 1); }
+    else { setChecking(true); setStartupError(''); setStartupVersion(v => v + 1); }
+  }
   const [trustBrowser, setTrustBrowser] = useState(false);
   const [twoFactor, setTwoFactor] = useState(false), [loginCode, setLoginCode] = useState(''), [useRecovery, setUseRecovery] = useState(false), [security, setSecurity] = useState(false);
-  const [agents, setAgents] = useState<Record<string, AgentState>>({}), [selected, setSelected] = useState('');
+  const [agents, setAgents] = useState<Record<string, AgentState>>({}), [selected, setSelected] = useState(() => loadSelectedAgent());
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false), [behavior, setBehavior] = useState('steer');
   const [images, setImages] = useState<RecordData[]>([]), [attachments, setAttachments] = useState<string[]>([]);
   const [launchEngine, setLaunchEngine] = useState<'pi' | 'codex'>('pi');
@@ -78,6 +84,7 @@ function App() {
   const [histories, setHistories] = useState<Record<string, HistoryView | undefined>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
   const agent = agents[selected];
+  useEffect(() => { if (agent) rememberSelectedAgent(selected); }, [selected, !!agent]);
   const reading = useReadingMode(authed && !!agent && !security && !launching && !savedSessions && !commandHelp);
   useEffect(() => { if (reading.active) { setPanel(false); setMobileList(false); } }, [reading.active]);
   const agentsRef = useRef(agents); agentsRef.current = agents;
@@ -95,14 +102,22 @@ function App() {
     return commands;
   }
   const loadCommands = useCallback(() => fetchCommands(selected), [selected, connected, agent?.online]);
-  useEffect(() => { void Promise.allSettled([api('auth/status').then(status => setTwoFactor(status.twoFactorEnabled)), api('me').then(() => setAuthed(true))]).finally(() => setChecking(false)); }, []);
+  useEffect(() => {
+    let stopped = false;
+    void workspaceStatus().then(status => {
+      if (!stopped) { setTwoFactor(status.twoFactorEnabled); setAuthed(status.authenticated); setStartupError(''); }
+    }).catch(e => { if (!stopped) setStartupError(e.message); }).finally(() => { if (!stopped) setChecking(false); });
+    return () => { stopped = true; };
+  }, [startupVersion]);
   useEffect(() => {
     if (!authed) return;
-    let stopped = false, timer: ReturnType<typeof setTimeout>, delay = 1000;
-    function connect() {
-      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`); wsRef.current = ws;
-      ws.onopen = () => { setConnected(true); delay = 1000; setError(''); };
-      ws.onmessage = event => {
+    setConnected(false); setConnectionLost(false);
+    const stop = connectWorkspace({
+      createSocket: () => new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`),
+      checkSession: () => api('me'),
+      onSocket: ws => { wsRef.current = ws; },
+      onOpen: () => { setConnected(true); setConnectionLost(false); },
+      onMessage: event => {
         const r = JSON.parse(event.data);
         if (r.type === 'agent') {
           setAgents(prev => ({ ...prev, [r.agent.id]: r.agent }));
@@ -116,25 +131,24 @@ function App() {
             const next: Record<string, AgentState> = {};
             for (const a of r.agents) next[a.id] = { ...prev[a.id], ...a }; return next;
           });
-          setSelected(prev => {
-            if (r.agents.some((a: AgentState) => a.id === prev)) return prev;
-            const replacement = r.replacements?.[prev];
-            return r.agents.some((a: AgentState) => a.id === replacement) ? replacement : r.agents[0]?.id || '';
-          });
+          setSelected(prev => availableSelection(prev || loadSelectedAgent(), r.agents, r.replacements));
         }
         if (r.type === 'reply') { const p = pending.current.get(r.id); if (p) { clearTimeout(p.timer); pending.current.delete(r.id); r.success ? p.resolve(r) : p.reject(new Error(r.error || 'Command failed')); } }
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        for (const p of pending.current.values()) { clearTimeout(p.timer); p.reject(new Error('Connection lost. Command may still have been accepted; check history before resending.')); } pending.current.clear();
-        if (!stopped) {
-          const retry = () => { if (!stopped) { timer = setTimeout(connect, delay); delay = Math.min(delay * 2, 15_000); } };
-          api('me').then(retry).catch(e => { if (!stopped && e.status === 401) { setAuthed(false); void api('auth/status').then(status => setTwoFactor(status.twoFactorEnabled)).catch(() => {}); } else retry(); });
-        }
-      };
+      },
+      onDisconnect: () => {
+        setConnected(false); setConnectionLost(true);
+        rejectPending();
+      },
+      onExpired: () => {
+        setAuthed(false); setError('Your session expired. Please sign in again.');
+        setChecking(true); setStartupVersion(v => v + 1);
+      },
+    });
+    function rejectPending() {
+      for (const p of pending.current.values()) { clearTimeout(p.timer); p.reject(new Error('Connection lost. Command may still have been accepted; check history before resending.')); } pending.current.clear();
     }
-    connect(); return () => { stopped = true; clearTimeout(timer); wsRef.current?.close(); };
-  }, [authed]);
+    return () => { stop(); wsRef.current = null; rejectPending(); };
+  }, [authed, connectionVersion]);
   useEffect(() => { setModels([]); }, [selected]);
   useLayoutEffect(() => {
     const el = conversation.current;
@@ -268,18 +282,20 @@ function App() {
     const blob = new Blob([JSON.stringify({ ...agent, messages: displayedMessages }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `${agent.name.replace(/[^a-z0-9_-]/gi, '-')}.json`; a.click(); URL.revokeObjectURL(url);
   }
-  if (checking) return <div className="login"><span className="logo">π</span><p>Connecting to your workspace…</p></div>;
-  if (!authed) return <div className="login"><div className="login-card"><span className="logo">π</span><div className="eyebrow">Your private workspace</div><h1>Pi, wherever you are.</h1><p>A quiet place for your agents, ideas, and mathematics.</p><form onSubmit={async e => { e.preventDefault(); try { await api('login', { password, trustBrowser: twoFactor && trustBrowser, ...(twoFactor ? useRecovery ? { recoveryCode: loginCode } : { code: loginCode } : {}) }); setPassword(''); setLoginCode(''); setTrustBrowser(false); setError(''); setAuthed(true); } catch (e) { setError((e as Error).message); void api('auth/status').then(status => setTwoFactor(status.twoFactorEnabled)).catch(() => {}); } }}><label htmlFor="password">Workspace password</label><input id="password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/>{twoFactor && <><label htmlFor="login-code">{useRecovery ? 'One-use recovery code' : 'Authenticator code'}</label><input id="login-code" spellCheck={false} autoCapitalize="none" autoComplete={useRecovery ? 'off' : 'one-time-code'} inputMode={useRecovery ? 'text' : 'numeric'} maxLength={useRecovery ? 100 : 6} pattern={useRecovery ? undefined : '[0-9]{6}'} required value={loginCode} onChange={e => setLoginCode(e.target.value)}/><button type="button" className="subtle" onClick={() => { setUseRecovery(!useRecovery); setLoginCode(''); }}>{useRecovery ? 'Use authenticator instead' : 'Use a recovery code'}</button><label className="checkbox-label"><input type="checkbox" checked={trustBrowser} onChange={e => setTrustBrowser(e.target.checked)}/>Trust this browser for 30 days</label><small>Stay signed in on this personal device. You can revoke it in Security settings.</small></>}<button className="primary">Enter workspace →</button></form>{error && <p className="error" role="alert">{error}</p>}<small>Your agents and files remain on your computer.</small></div></div>;
+  if (checking) return <div className="login"><span className="logo">π</span><p role="status">Connecting to your workspace…</p></div>;
+  if (startupError) return <WorkspaceUnavailable message={startupError} refresh={refresh}/>;
+  if (!authed) return <div className="login"><div className="login-card"><span className="logo">π</span><div className="eyebrow">Your private workspace</div><h1>Pi, wherever you are.</h1><p>A quiet place for your agents, ideas, and mathematics.</p><form onSubmit={async e => { e.preventDefault(); try { await api('login', { password, trustBrowser: twoFactor && trustBrowser, ...(twoFactor ? useRecovery ? { recoveryCode: loginCode } : { code: loginCode } : {}) }); setPassword(''); setLoginCode(''); setTrustBrowser(false); setError(''); setAuthed(true); } catch (e) { setError((e as Error).message); void api('auth/status').then(status => setTwoFactor(status.twoFactorEnabled)).catch(() => {}); } }}><label htmlFor="password">Workspace password</label><input id="password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/>{twoFactor && <><label htmlFor="login-code">{useRecovery ? 'One-use recovery code' : 'Authenticator code'}</label><input id="login-code" spellCheck={false} autoCapitalize="none" autoComplete={useRecovery ? 'off' : 'one-time-code'} inputMode={useRecovery ? 'text' : 'numeric'} maxLength={useRecovery ? 100 : 6} pattern={useRecovery ? undefined : '[0-9]{6}'} required value={loginCode} onChange={e => setLoginCode(e.target.value)}/><button type="button" className="subtle" onClick={() => { setUseRecovery(!useRecovery); setLoginCode(''); }}>{useRecovery ? 'Use authenticator instead' : 'Use a recovery code'}</button><label className="checkbox-label"><input type="checkbox" checked={trustBrowser} onChange={e => setTrustBrowser(e.target.checked)}/>Trust this browser for 30 days</label><small>Stay signed in on this personal device. You can revoke it in Security settings.</small></>}<button className="primary">Enter workspace →</button></form>{error && <p className="error" role="alert">{error}</p>}<RefreshButton refresh={refresh}/><p><small>Your agents and files remain on your computer.</small></p></div></div>;
   return <div className={'app' + (sidebarCollapsed ? ' sidebar-collapsed' : '') + (reading.active ? ' reading-mode' : '') + (reading.top ? ' reading-top' : '') + (reading.bottom ? ' reading-bottom' : '')}>
     {mobileList && <button type="button" className="sidebar-backdrop mobile-only" aria-label="Dismiss sidebar" onClick={closeMobileSidebar}/>}
     <aside id="agent-sidebar" aria-label="Agents and workspace navigation" className={'sidebar ' + (mobileList ? 'shown' : '')}><div className="brand"><span className="logo">π</span><div><strong>Pi Hub</strong><small>YOUR WORKSPACE</small></div><button className="mobile-only subtle" aria-label="Close sidebar" onClick={closeMobileSidebar}>×</button></div>
-      <div className="connection"><span className={'dot ' + (connected ? 'online' : '')}/>{connected ? 'Connected to workspace' : 'Reconnecting…'}</div>
+      <div className="connection"><span className={'dot ' + (connected ? 'online' : '')}/>{connected ? 'Connected to workspace' : connectionLost ? 'Workspace disconnected · retrying…' : 'Connecting to workspace…'}</div>
       <button className="new-agent" disabled={!connected} onClick={async () => { try { const r = await api('projects'); setProjects(r.projects); setProject(r.projects[0]?.path || r.root); setMobileList(false); setLaunching(true); } catch (e) { setError((e as Error).message); } }}>＋ New agent</button>
       <button className="new-agent" disabled={!connected} onClick={async () => { try { const r = await api('projects'); setProjects(r.projects); setMobileList(false); setSavedSessions(true); } catch (e) { setError((e as Error).message); } }}>↻ Resume sessions</button>
       <AgentList agents={agents} selected={selected} select={id => { setSelected(id); closeMobileSidebar(); scrollAnchor.current = null; follow.current = true; requestAnimationFrame(() => { if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight; }); }}/>
       <footer><button className={'subtle security-link ' + (twoFactor ? '' : 'warning')} onClick={() => { setMobileList(false); setSecurity(true); }}>Security · 2FA {twoFactor ? 'on' : 'off'}</button><button className="subtle" onClick={async () => { try { await api('logout', {}); setAuthed(false); setMobileList(false); setAgents({}); setHistories({}); } catch (e) { setError((e as Error).message); } }}>Sign out ↗</button></footer>
     </aside>
-    <FileLinkContext.Provider value={agent?.id}><main><header><div className="workspace-heading"><button type="button" className="desktop-only sidebar-toggle subtle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="agent-sidebar" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>{sidebarCollapsed ? '☰' : '‹'}</button><button ref={mobileSidebarToggle} type="button" className="mobile-only sidebar-toggle subtle" aria-label="Open sidebar" aria-expanded={mobileList} aria-controls="agent-sidebar" onClick={() => setMobileList(true)}>☰</button><div className="workspace-title"><h2 title={agent?.name || 'Your workspace'}>{agent?.name || 'Your workspace'}</h2><div className="workspace-meta"><small title={agent ? `${agent.model || 'Pi'} · ${agent.thinking || 'default'} thinking` : undefined}>{agent ? `${agent.model || 'Pi'} · ${agent.thinking || 'default'} thinking` : 'Choose an agent to begin'}</small>{agent && <UsageMeter key={`${agent.id}:${agent.sessionId || agent.sessionFile || ''}`} agent={agent} connected={connected} request={() => rpc({ type: 'get_session_stats' }, agent.id)}/>}</div></div></div>{agent && <div className="header-actions">{reading.active && <button className="subtle" aria-label="Exit reading mode" title="Exit reading mode (F11 or Escape)" onClick={reading.exit}>⤢</button>}<span className="status">{agent.online ? '● ' : ''}{agentStatus(agent)}</span><button className="subtle" aria-label="Rename agent" title="Rename agent" disabled={!connected || !agent.online} onClick={() => { const name = window.prompt('Agent name', agent.name); if (name?.trim()) act({ type: 'set_session_name', name: name.trim() }); }}>✎</button><button className="activity-toggle" aria-label="Activity" title="Activity and controls" onClick={() => setPanel(!panel)} aria-expanded={panel}><span className="activity-text">Activity {Object.values(agent.tools || {}).filter(t => t.running).length || ''}</span><span className="activity-icon" aria-hidden="true">☷</span></button></div>}</header>
+    <FileLinkContext.Provider value={agent?.id}><main><header><div className="workspace-heading"><button type="button" className="desktop-only sidebar-toggle subtle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="agent-sidebar" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>{sidebarCollapsed ? '☰' : '‹'}</button><button ref={mobileSidebarToggle} type="button" className="mobile-only sidebar-toggle subtle" aria-label="Open sidebar" aria-expanded={mobileList} aria-controls="agent-sidebar" onClick={() => setMobileList(true)}>☰</button><div className="workspace-title"><h2 title={agent?.name || 'Your workspace'}>{agent?.name || 'Your workspace'}</h2><div className="workspace-meta"><small title={agent ? `${agent.model || 'Pi'} · ${agent.thinking || 'default'} thinking` : undefined}>{agent ? `${agent.model || 'Pi'} · ${agent.thinking || 'default'} thinking` : 'Choose an agent to begin'}</small>{agent && <UsageMeter key={`${agent.id}:${agent.sessionId || agent.sessionFile || ''}`} agent={agent} connected={connected} request={() => rpc({ type: 'get_session_stats' }, agent.id)}/>}</div></div></div><div className="header-actions"><RefreshButton refresh={refresh}/>{agent && <>{reading.active && <button className="subtle" aria-label="Exit reading mode" title="Exit reading mode (F11 or Escape)" onClick={reading.exit}>⤢</button>}<span className="status">{agent.online ? '● ' : ''}{agentStatus(agent)}</span><button className="subtle" aria-label="Rename agent" title="Rename agent" disabled={!connected || !agent.online} onClick={() => { const name = window.prompt('Agent name', agent.name); if (name?.trim()) act({ type: 'set_session_name', name: name.trim() }); }}>✎</button><button className="activity-toggle" aria-label="Activity" title="Activity and controls" onClick={() => setPanel(!panel)} aria-expanded={panel}><span className="activity-text">Activity {Object.values(agent.tools || {}).filter(t => t.running).length || ''}</span><span className="activity-icon" aria-hidden="true">☷</span></button></>}</div></header>
+      {!connected && <ConnectionNotice failed={connectionLost} refresh={refresh}/>}
       {error && <div className="error-banner" role="alert">{error}<button className="subtle" onClick={() => setError('')}>×</button></div>}
       <div className="content"><div className="conversation" ref={conversation} onScroll={e => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160; }}>
         {!agent ? <div className="empty"><span className="logo">π</span><h1>Room to think.</h1><p>Start a new agent or connect a terminal session.<br/>Math, code, and long-running work—all in one place.</p><code>pi -e ./extensions/hub.ts</code></div> : <div className="transcript">{!agent.messages?.length && <div className="empty"><h1>What are we exploring?</h1><p>Write naturally. Mathematics is rendered with KaTeX.<br/>Use $…$ inline, or $$…$$ for display equations.</p><div className="example"><RichText text={'$$H_n(X) = \\ker \\partial_n / \\operatorname{im}\\partial_{n+1}$$'}/></div></div>}
