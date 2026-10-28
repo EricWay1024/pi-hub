@@ -113,7 +113,23 @@ journalctl --user -u pi-hub -u pi-hub-tunnel -f
 
 **Current personal deployment (2026-10-26):** `https://rp.yw.je` now uses the NixOS VPS at `179.237.124.203`. The canonical WSL user unit remains `pi-hub-tunnel.service`, forwarding remote `127.0.0.1:7433` to WSL `127.0.0.1:7433` through SSH alias `truss` (`eric@179.237.124.203:22`). The old VPS is retained under alias `truss-old` (`95.179.224.75:1989`) as a temporary origin bridge, not a second hub. The migration did not restart `pi-hub.service` or move its data off WSL. The temporary `pi-hub-tunnel-nixos-staging.service` is disabled; do not enable it alongside the canonical unit because both claim the same forwarded port. Production proxy configuration, the `/agent` block, unavailable page, TLS renewal and SSH server keepalives are declared in `../move-vps/`; do not hand-edit generated NixOS nginx files.
 
-The optional tunnel uses the configured hub port on both ends and does not copy provider credentials. It uses a 10-second connection timeout and client-side keepalives. Also configure **server-side SSH keepalives on the VPS** so dead sessions release the forwarded port rather than blocking reconnection:
+### Automatic tunnel recovery
+
+The optional tunnel uses the configured hub port on both ends and does not copy provider credentials. `deploy/tunnel.ts` supervises a dedicated SSH connection, with a 10-second connection timeout and retries every five seconds. Every ten seconds it sends an application heartbeat; the VPS checks the Hub HTTP endpoint **through the reverse forward** and acknowledges it. Missing acknowledgements for 45 seconds trigger a tunnel-only reconnect. Failed forwarded HTTP checks also trigger reconnect when the local Hub is healthy; a Hub outage does not restart agents or churn healthy SSH connections.
+
+Crucially, `deploy/tunnel-remote.sh` also runs **on the VPS inside that same SSH session**. If heartbeats stop, it terminates only its own parent SSH session, freeing the forwarded port even when TCP/SSH keepalives are stuck. SSH multiplexing is explicitly disabled so this cannot close another shared SSH connection. It never finds and kills arbitrary port owners; an unrelated port conflict is logged and retried, not forcibly removed. The remote host needs Bash, curl, and standard `ps`/`tr` tools, but no sudo or separately installed watchdog service.
+
+Upgrade an existing tunnel without rewriting or restarting Hub:
+
+```bash
+PI_HUB_TUNNEL_ONLY=1 PI_HUB_SSH_HOST=my-vps bash deploy/install-local-services.sh
+systemctl --user restart pi-hub-tunnel.service
+journalctl --user -u pi-hub-tunnel -f
+```
+
+A network switch can still interrupt browser connections briefly. Recovery normally takes around a minute once a working route is available; it is not a guarantee while the computer is asleep or the network/VPS is unreachable. The browser reconnects without replaying commands. A legacy, already-stale tunnel created **before** this upgrade has no remote watchdog and may need one last manual cleanup as described below.
+
+Retain **server-side SSH keepalives on the VPS** as an additional safeguard:
 
 ```text
 # Global sshd settings (outside Match blocks):
@@ -121,7 +137,7 @@ ClientAliveInterval 20
 ClientAliveCountMax 3
 ```
 
-Back up the SSH configuration, validate with `sudo sshd -t`, and reload (not restart) the appropriate SSH service. Reconnect the tunnel for new settings to apply. These probes disconnect unresponsive clients, not healthy idle sessions; port cleanup can take about 80 seconds. A tunnel restart does not stop Pi agents. If a port stays occupied, inspect its listener and confirm the upstream is dead before terminating only that stale SSH session—never blindly kill all SSH processes.
+Back up the SSH configuration, validate with `sudo sshd -t`, and reload (not restart) the appropriate SSH service. Reconnect the tunnel for new settings to apply. These probes disconnect unresponsive clients, not healthy idle sessions. Keepalives alone did not reliably release a stalled forwarding port after a WSL route change; the application-level watchdog above does not rely on their TCP timeout behaviour. A tunnel restart does not stop Pi agents. If a port stays occupied, inspect its listener and confirm the upstream is dead before terminating only that stale SSH session—never blindly kill all SSH processes.
 
 Systemd does not keep Windows awake or automatically start WSL after Windows reboot. The site is unavailable while the local host/network is offline; keepalives improve recovery, not offline availability. macOS users can run `npm start` under their own process supervisor.
 
@@ -186,7 +202,13 @@ npm audit
 
 Use a separate test configuration for Vite development: set its origin to `http://127.0.0.1:5173`, start the backend, then `npm run dev`. Never repurpose the live configuration for development.
 
-Tests cover authentication, TOTP vectors/replay/recovery, trusted-browser lifetime/restart/revocation, WebSockets, extension lifecycle, slash dispatch, math, paths, readable output, queues, and saved-history pagination. Chromium fixtures have also checked mobile layout, 901-message pagination/scrolling, command completion, enrollment, recovery, and remembered-browser restart/revocation. GitHub Actions runs the test/typecheck/build/audit checks on pushes and pull requests.
+Tests cover authentication, TOTP vectors/replay/recovery, trusted-browser lifetime/restart/revocation, WebSockets, extension lifecycle, slash dispatch, math, paths, readable output, queues, saved-history pagination, and tunnel recovery. The opt-in `tests/tunnel-live.test.ts` uses an unused remote loopback port (default 17433), checks remote heartbeat expiry, and freezes only its own test SSH process to verify automatic recovery:
+
+```bash
+PI_HUB_TUNNEL_TEST_HOST=my-vps node --import tsx --test tests/tunnel-live.test.ts
+```
+
+Never use the production forwarding port for fault tests. Chromium fixtures have also checked mobile layout, 901-message pagination/scrolling, command completion, enrollment, recovery, and remembered-browser restart/revocation. GitHub Actions runs the test/typecheck/build/audit checks on pushes and pull requests.
 
 The Pi development SDK's shrinkwrap can restore vulnerable `brace-expansion` despite npm's root override. The project locks an independent patched 5.0.12 dev dependency and copies it over the SDK copy before tests/checks/builds, without downloads or third-party install scripts. After updates, check both `npm ls brace-expansion` and `npm audit`; `npm run harden-deps` also runs the fix explicitly.
 

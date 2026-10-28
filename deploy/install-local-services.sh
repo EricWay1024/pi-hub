@@ -5,6 +5,10 @@ ROOT="$PWD"
 NODE="$(command -v node)"
 NODE_DIR="$(dirname "$NODE")"
 SSH_HOST="${PI_HUB_SSH_HOST:-}"
+TUNNEL_ONLY="${PI_HUB_TUNNEL_ONLY:-0}"
+if [[ "$TUNNEL_ONLY" == 1 && -z "$SSH_HOST" ]]; then
+  printf 'PI_HUB_TUNNEL_ONLY requires PI_HUB_SSH_HOST.\n' >&2; exit 1
+fi
 if [[ -n "$SSH_HOST" && ! "$SSH_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$ ]]; then
   printf 'PI_HUB_SSH_HOST must be a simple SSH alias or user@host.\n' >&2; exit 1
 fi
@@ -16,15 +20,17 @@ quote_unit() {
 }
 mkdir -p "$HOME/.config/systemd/user"
 # Generated units contain executable paths, never passwords or registration tokens.
+if [[ "$TUNNEL_ONLY" != 1 ]]; then
 printf '[Unit]\nDescription=Pi Hub workspace\nAfter=network.target\n\n[Service]\nWorkingDirectory=%s\nExecStart=%s %s %s\nEnvironment=%s\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=15\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$ROOT")" "$(quote_unit "$NODE")" "$(quote_unit "$ROOT/node_modules/tsx/dist/cli.mjs")" "$(quote_unit "$ROOT/server/cli.ts")" "$(quote_unit "PATH=$NODE_DIR:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin")" > "$HOME/.config/systemd/user/pi-hub.service"
 if [[ -n "${PI_HUB_CONFIG:-}" ]]; then
   printf '\n# Custom configuration path (not its contents).\n[Service]\nEnvironment=%s\n' "$(quote_unit "PI_HUB_CONFIG=$PI_HUB_CONFIG")" >> "$HOME/.config/systemd/user/pi-hub.service"
 fi
+fi
 if [[ -n "$SSH_HOST" ]]; then
-  SSH="$(command -v ssh)"
-  printf '[Unit]\nDescription=Pi Hub reverse SSH tunnel\nAfter=network.target pi-hub.service\nWants=pi-hub.service\n\n[Service]\nExecStart=%s -NT -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -R 127.0.0.1:%s:127.0.0.1:%s %s\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$SSH")" "$PORT" "$PORT" "$(quote_unit "$SSH_HOST")" > "$HOME/.config/systemd/user/pi-hub-tunnel.service"
+  command -v ssh >/dev/null
+  printf '[Unit]\nDescription=Pi Hub self-healing reverse SSH tunnel\nAfter=network.target pi-hub.service\nWants=pi-hub.service\n\n[Service]\nExecStart=%s %s %s %s\nEnvironment=%s\nRestart=always\nRestartSec=5\nTimeoutStopSec=10\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n' "$(quote_unit "$NODE")" "$(quote_unit "$ROOT/deploy/tunnel.ts")" "$(quote_unit "$SSH_HOST")" "$PORT" "$(quote_unit "PATH=$NODE_DIR:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin")" > "$HOME/.config/systemd/user/pi-hub-tunnel.service"
 fi
 systemctl --user daemon-reload
-systemctl --user enable --now pi-hub.service
+if [[ "$TUNNEL_ONLY" != 1 ]]; then systemctl --user enable --now pi-hub.service; fi
 if [[ -n "$SSH_HOST" ]]; then systemctl --user enable --now pi-hub-tunnel.service; fi
-printf 'Hub installed. Optional tunnel installed only when PI_HUB_SSH_HOST is supplied.\n'
+printf 'Service units installed. Restart an already-running tunnel to apply updates; Hub was not restarted.\n'
