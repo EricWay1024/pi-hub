@@ -9,7 +9,7 @@ import { emptyAgent } from '../shared/state.js';
 import { codexMessages } from '../shared/codex.js';
 import { commandList } from '../shared/commands.js';
 import { messageKey, mergeMessages } from '../shared/history.js';
-import { CodexAgent } from '../server/codex.js';
+import { CodexAgent, highestReasoningEffort } from '../server/codex.js';
 import { createHub } from '../server/hub.js';
 import { createConfig } from '../server/config.js';
 
@@ -21,6 +21,14 @@ async function fixture() {
   process.env.PI_HUB_CODEX_BIN = bin; process.env.PI_HUB_CODEX_TEST_LOG = log;
   return { temp, log, async cleanup() { old === undefined ? delete process.env.PI_HUB_CODEX_BIN : process.env.PI_HUB_CODEX_BIN = old; oldLog === undefined ? delete process.env.PI_HUB_CODEX_TEST_LOG : process.env.PI_HUB_CODEX_TEST_LOG = oldLog; await rm(temp, { recursive: true, force: true }); } };
 }
+test('Codex launch effort selects the highest supported level without inventing an unsupported one', () => {
+  const model = (levels: string[]) => ({ defaultReasoningEffort: 'medium', supportedReasoningEfforts: levels.map(reasoningEffort => ({ reasoningEffort })) });
+  assert.equal(highestReasoningEffort(model(['high', 'medium'])), 'high');
+  assert.equal(highestReasoningEffort(model(['xhigh', 'low', 'high'])), 'xhigh');
+  assert.equal(highestReasoningEffort(model(['max', 'xhigh'])), 'max');
+  assert.equal(highestReasoningEffort(model(['low'])), 'low');
+  assert.equal(highestReasoningEffort(undefined, 'high'), 'high');
+});
 test('Codex items use stable live/history identities and readable tools', () => {
   const first = codexMessages({ type: 'agentMessage', id: 'one', text: 'Part' })[0], last = codexMessages({ type: 'agentMessage', id: 'one', text: 'Complete' })[0];
   assert.equal(messageKey(first), messageKey(last)); assert.equal(mergeMessages([first], [last]).length, 1);
@@ -35,6 +43,10 @@ test('Codex adapter maps controls, approvals, token usage and cross-turn paginat
   const adapter = new CodexAgent(state, () => {});
   try {
     await adapter.start(); assert.equal(state.model, 'test-model'); assert.deepEqual(state.thinkingLevels, ['medium', 'high']);
+    assert.equal(state.thinking, 'high');
+    await adapter.command({ type: 'set_thinking_level', level: 'medium' });
+    await adapter.command({ type: 'set_model', provider: 'codex', modelId: 'test-model' });
+    assert.equal(state.thinking, 'high');
     await adapter.command({ type: 'set_thinking_level', level: 'high' });
     await assert.rejects(adapter.command({ type: 'set_thinking_level', level: 'xhigh' }), /Unsupported/);
     await adapter.command({ type: 'prompt', message: 'hello' });
@@ -57,6 +69,7 @@ test('Codex adapter maps controls, approvals, token usage and cross-turn paginat
     const start = calls.find(c => c.method === 'thread/start'); assert.equal(start.params.sandbox, 'danger-full-access'); assert.equal(start.params.approvalPolicy, 'never');
     assert.equal(start.params.config, undefined); // Do not bypass hook trust or replace login/configuration.
     assert.equal(calls.filter(c => c.method === 'turn/start').length, 2); assert.equal(calls.find(c => c.method === 'turn/steer').params.expectedTurnId, 'turn-live-2');
+    assert.ok(calls.filter(c => c.method === 'turn/start').every(c => c.params.effort === 'high'));
     assert.ok(calls.some(c => c.id === 900 && c.result?.decision === 'accept'));
     const unconfirmed = adapter.command({ type: 'prompt', message: 'hang' });
     const rejected = assert.rejects(unconfirmed, /stopped|exited/);

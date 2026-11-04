@@ -6,6 +6,7 @@ import { execFileSync, type ChildProcess } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startTunnel, sshArguments } from '../deploy/tunnel.js';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,9 +56,9 @@ test('tunnel uses loopback-only forwarding and an isolated SSH transport', () =>
 });
 
 test('shell scripts parse; remote watchdog refuses a non-SSH parent without killing it', () => {
-  const remote = new URL('../deploy/tunnel-remote.sh', import.meta.url).pathname;
+  const remote = fileURLToPath(new URL('../deploy/tunnel-remote.sh', import.meta.url));
   execFileSync('bash', ['-n', remote]);
-  execFileSync('bash', ['-n', new URL('../deploy/install-local-services.sh', import.meta.url).pathname]);
+  execFileSync('bash', ['-n', fileURLToPath(new URL('../deploy/install-local-services.sh', import.meta.url))]);
   assert.throws(() => execFileSync('bash', [remote, '7433', '1'], { stdio: 'pipe' }), /direct child of its own SSH session/);
 });
 
@@ -70,7 +71,7 @@ test('tunnel-only installer leaves Hub unit untouched and does not start/restart
   await writeFile(config, JSON.stringify({ port: 17433 }));
   await writeFile(path.join(units, 'pi-hub.service'), '# existing custom Hub unit\n');
   await writeFile(path.join(home, 'bin/systemctl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HOME/systemctl-calls"\n', { mode: 0o700 });
-  execFileSync('bash', [new URL('../deploy/install-local-services.sh', import.meta.url).pathname], {
+  execFileSync('bash', [fileURLToPath(new URL('../deploy/install-local-services.sh', import.meta.url))], {
     env: { ...process.env, HOME: home, PATH: `${home}/bin:${process.env.PATH}`, PI_HUB_CONFIG: config,
       PI_HUB_TUNNEL_ONLY: '1', PI_HUB_SSH_HOST: 'example' },
   });

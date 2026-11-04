@@ -139,7 +139,29 @@ ClientAliveCountMax 3
 
 Back up the SSH configuration, validate with `sudo sshd -t`, and reload (not restart) the appropriate SSH service. Reconnect the tunnel for new settings to apply. These probes disconnect unresponsive clients, not healthy idle sessions. Keepalives alone did not reliably release a stalled forwarding port after a WSL route change; the application-level watchdog above does not rely on their TCP timeout behaviour. A tunnel restart does not stop Pi agents. If a port stays occupied, inspect its listener and confirm the upstream is dead before terminating only that stale SSH session—never blindly kill all SSH processes.
 
-Systemd does not keep Windows awake or automatically start WSL after Windows reboot. The site is unavailable while the local host/network is offline; keepalives improve recovery, not offline availability. macOS users can run `npm start` under their own process supervisor.
+Systemd does not keep Windows awake or automatically start WSL after Windows reboot. The site is unavailable while the local host/network is offline; keepalives improve recovery, not offline availability.
+
+### macOS services and a separate Hub
+
+After quick-start setup and build, install per-user LaunchAgents from a permanent checkout:
+
+```bash
+node deploy/install-macos-services.mjs
+# Optional VPS reverse tunnel. Choose an unused remote loopback port for a second Hub:
+PI_HUB_SSH_HOST=eric@your-vps PI_HUB_REMOTE_PORT=7434 node deploy/install-macos-services.mjs
+launchctl print gui/$(id -u)/je.yw.pi-hub
+launchctl print gui/$(id -u)/je.yw.pi-hub-tunnel
+```
+
+The installer uses the current Node executable and the checkout's pinned Pi CLI by default; `PI_HUB_PI_BIN` can select an installed Pi executable. `PI_HUB_NODE_BIN` can select a stable executable path such as `/opt/homebrew/opt/node@24/bin/node` that survives Homebrew patch upgrades. It preserves `PI_HUB_CONFIG`, supports paths with spaces, and stores no credentials in the generated plists. Jobs start at login and recover from failures. Re-running the installer writes updated plists but leaves loaded jobs running, since a Hub restart stops its managed agents. Logs are in `~/Library/Logs/pi-hub/`. `--dry-run` writes plists without loading them; `PI_HUB_LAUNCH_AGENTS_DIR` selects an alternate output directory.
+
+Each machine uses its own configuration, password, 2FA, Pi login, projects and sessions. Configure a distinct HTTPS origin and VPS reverse proxy for each Hub, block public `/agent`, and point that proxy at its assigned reverse-tunnel port. Authenticate Pi locally with `/login` before launching browser-managed agents. These LaunchAgents do not keep the Mac awake or run before the user logs in.
+
+Install `ripgrep` and `fd` on the service PATH (for example, `brew install ripgrep fd`) to avoid Pi needing to download its search tools on first launch. LaunchAgents have a separate PATH from interactive shells.
+
+The macOS installer also detects the Codex CLI bundled with `/Applications/ChatGPT.app`, or accepts `PI_HUB_CODEX_BIN` for a separate installation. Codex uses its native local login/configuration. Choose **Codex CLI** in the new-agent engine selector; Pi's model/provider defaults remain separate.
+
+**Separate Mac deployment (2026-11-04):** `https://mac.yw.je` uses its own Mac-local Hub on `127.0.0.1:7433`, forwarded to the VPS at `127.0.0.1:7434`. The WSL Hub remains at `https://rp.yw.je` using VPS port 7433. The Mac's password, 2FA, provider login and sessions stay on the Mac; VPS TLS/proxy configuration is declared in `move-vps/modules/mac-pi-hub.nix`.
 
 **Restarting the hub stops browser-managed Pi and Codex processes.** Check the inventory first. Attached Pi terminal agents are independent and reconnect. Use **Resume sessions** to reopen saved conversations; processes are never automatically restored.
 
@@ -157,7 +179,7 @@ Install and sign in to the Codex CLI locally, then choose **Codex CLI** in **New
 
 Each Hub-launched Codex conversation owns a private `codex app-server --stdio` process, using native local login/configuration and preserving hook trust. New and resumed Hub-owned threads explicitly use **`sandbox: danger-full-access` and `approvalPolicy: never`**: filesystem/network access is unrestricted by Codex's sandbox and command approval prompts are disabled. Commands can affect anything the Hub user's OS permissions allow, not just the workspace. This does not grant root privileges, change standalone Codex defaults, or alter already-running threads; reopening an agent already running in Hub keeps its current permissions. Stop and resume it to apply the new policy after the updated backend is loaded. The browser never connects directly to an exposed Codex server. Command/file approvals offer **Approve once**, **Deny**, and **Cancel**; input questions are supported. Other server-request types fail closed without granting permissions.
 
-Supported: streamed messages/reasoning, shell/file/MCP/subagent tool cards, steering with an active-turn precondition, interrupt, rename, manual/native compaction status, context battery and native paginated item history. Model and reasoning choices come from Codex's catalog and apply to the next submitted turn. Pi defaults do not configure Codex. Pi extension commands and Codex CLI-only commands are not forwarded as model prompts. Follow-up queues are not yet supported for Codex; use steering.
+Supported: streamed messages/reasoning, shell/file/MCP/subagent tool cards, steering with an active-turn precondition, interrupt, rename, manual/native compaction status, context battery and native paginated item history. New and resumed Codex agents start at the highest reasoning effort advertised for their model; selecting a different model also chooses its highest supported effort. You can lower it afterwards in Thinking. Model and reasoning choices come from Codex's catalog and apply to the next submitted turn. Pi defaults do not configure Codex. Pi extension commands and Codex CLI-only commands are not forwarded as model prompts. Follow-up queues are not yet supported for Codex; use steering.
 
 Stopping one Codex agent stops only its private app-server, not existing terminal sessions or the shared Codex daemon. Hub restart stops all Hub-managed processes, including Codex. Saved threads can be resumed through **Resume sessions** or the Codex CLI. Attaching to an external live Codex process or sharing its daemon is **not yet implemented**. Offline Codex agents expose only their buffered history. Lost acknowledgements are never automatically retried.
 
