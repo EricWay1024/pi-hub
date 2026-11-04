@@ -179,6 +179,18 @@ Markdown links to local files open through an authenticated, read-only file endp
 
 Independent live agents are never merged by name or working directory. Attached IDs survive extension reloads; stale offline entries for the same host/session are pruned without deleting session files.
 
+## LG laptop cooling control (WSL)
+
+After signing in, open **笔记本散热** in the sidebar footer. The panel reads the laptop's current LG cooling profile and offers only the profiles its installed LG interface reports. **刷新状态** re-reads the state (reads are coalesced/cached for up to five seconds). Switching is not optimistic: Hub reads the interface again to confirm, and never automatically retries a failed/uncertain write. This controls a cooling/performance **profile**, not a fixed fan percentage or RPM; LG firmware continues managing temperature and fan speed.
+
+Requires Hub running in WSL on the target Windows laptop, working Windows PowerShell interop, and the OEM **LG Smart Assistant** installation at its standard location. No extra Windows listener, administrator task, third-party driver, EC-register writes, or disabled thermal protections. Non-LG hosts, missing software, unrecognized modes, and unsupported interfaces show an unavailable state rather than enabling controls. No changes happen at startup or merely opening the panel. Profiles may affect CPU performance, noise and battery life; Windows/LG may subsequently change them. The computer must be awake and Hub/WSL reachable.
+
+**Verified on the personal LG gram `17Z90SP-E.AL78C`:** LG reports `FourLevelMax`, offering **低噪 / 正常 / 高性能 / 最大散热**. A real normal → performance → normal round trip was confirmed through the vendor readback. Other recognized modern LG interfaces have mappings but have not been hardware-tested; the legacy two-level interface is intentionally unsupported. `Set_SystemTempMode` uses different integers from LG's `FanModeValue` enum (e.g. maximum cooling is argument **6**, not enum value 8); do not interchange them.
+
+Implementation: `server/lg-fan.ps1` calls the installed `WindowsControl.LGDeviceController`; `server/fan.ts` bounds subprocess time/output, serializes writes and validates readback. `GET/POST /api/laptop/fan` uses the existing browser authentication and same-origin POST protection. The browser can submit only an allowlisted profile ID, never a command, executable path, or register address. Anyone with workspace access can change these profiles.
+
+**Deployment:** this adds backend routes and requires a normal, safely scheduled Hub restart; the browser-stream live patch does **not** load this feature. Wait for active managed agents to finish/save first—restarting stops them. Then run `npm run build` and `systemctl --user restart pi-hub.service`, and refresh the browser. Do not restart the service from an agent that it manages.
+
 ## Security model
 
 Anyone signed in can execute commands as the server's user through agents/extensions. Launch paths are confined to the configured projects root with realpath/symlink checks, but this is **not a file-access or execution sandbox**. Do not share access or local registration tokens.
@@ -204,7 +216,7 @@ npm audit
 
 Use a separate test configuration for Vite development: set its origin to `http://127.0.0.1:5173`, start the backend, then `npm run dev`. Never repurpose the live configuration for development.
 
-Tests cover authentication, TOTP vectors/replay/recovery, trusted-browser lifetime/restart/revocation, WebSockets, extension lifecycle, slash dispatch, math, paths, readable output, queues, saved-history pagination, and tunnel recovery. The opt-in `tests/tunnel-live.test.ts` uses an unused remote loopback port (default 17433), checks remote heartbeat expiry, and freezes only its own test SSH process to verify automatic recovery:
+Tests cover authentication, TOTP vectors/replay/recovery, trusted-browser lifetime/restart/revocation, WebSockets, extension lifecycle, slash dispatch, math, paths, readable output, queues, saved-history pagination, LG cooling profile validation/readback/concurrency and authenticated API access, and tunnel recovery. The opt-in `tests/tunnel-live.test.ts` uses an unused remote loopback port (default 17433), checks remote heartbeat expiry, and freezes only its own test SSH process to verify automatic recovery:
 
 ```bash
 PI_HUB_TUNNEL_TEST_HOST=my-vps node --import tsx --test tests/tunnel-live.test.ts

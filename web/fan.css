@@ -1,0 +1,6 @@
+.fan-control { max-height: calc(100dvh - 40px); overflow-y: auto; }
+.fan-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.fan-modes button { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px; }
+.fan-modes button.selected { border-color: var(--accent, #358778); box-shadow: inset 0 0 0 1px var(--accent, #358778); opacity: 1; }
+.fan-modes small { white-space: normal; line-height: 1.5; }
+@media (max-width: 420px) { .fan-modes { grid-template-columns: 1fr; } }

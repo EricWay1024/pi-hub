@@ -13,6 +13,8 @@ import { CodexAgent } from './codex.js';
 import { SessionLibrary } from './sessions.js';
 import { serveLocalFile } from './files.js';
 import { installBrowserStream } from './browser-stream.js';
+import { createFanControl, FanError, type FanControl } from './fan.js';
+import { fanModes } from '../shared/fan.js';
 import { sameAttachedSession } from '../shared/agent-identity.js';
 import { hashRecovery, newEnrollment, recoveryCodes, SESSION_LIFETIME, validTotpStep, verifySecondFactor } from './two-factor.js';
 import { hostname } from 'node:os';
@@ -32,7 +34,8 @@ function send(ws: WebSocket, data: unknown) {
   if (ws.bufferedAmount > maxBytes * 2) { ws.terminate(); return; }
   ws.send(JSON.stringify(data));
 }
-export function createHub(config: Config, options: { persistConfig?: (config: Config) => void } = {}) {
+export function createHub(config: Config, options: { persistConfig?: (config: Config) => void; fanControl?: FanControl } = {}) {
+  const fan = options.fanControl || createFanControl();
   const agents = new Map<string, AgentState>();
   const connectors = new Map<string, WebSocket>();
   const children = new Map<string, ChildProcessWithoutNullStreams>();
@@ -266,6 +269,20 @@ export function createHub(config: Config, options: { persistConfig?: (config: Co
       if (url.pathname.startsWith('/api/')) {
         if (!authenticated(req)) return json(res, 401, { error: 'Sign in required' });
         if (url.pathname === '/api/me') return json(res, 200, { ok: true });
+        if (url.pathname === '/api/laptop/fan') {
+          const b = req.method === 'POST' ? await body(req, 1024) : undefined;
+          try {
+            if (req.method === 'GET') return json(res, 200, await fan.status());
+            if (req.method === 'POST') {
+              const mode = fanModes.find(candidate => candidate.id === b?.mode);
+              if (!mode) return json(res, 400, { error: 'Invalid cooling mode' });
+              return json(res, 200, await fan.set(mode.id));
+            }
+            return json(res, 405, { error: 'Method not allowed' });
+          } catch (error) {
+            return json(res, error instanceof FanError ? error.status : 503, { error: error instanceof FanError ? error.message : 'LG cooling interface unavailable' });
+          }
+        }
         if (url.pathname === '/api/auth/trusted' && req.method === 'GET') {
           const current = trustedBrowser(config, sessionId(req));
           return json(res, 200, { browsers: trustedBrowsers(config).map(({ id, label, created, expires }) => ({ id, label, created, expires, current: id === current?.id })) });
