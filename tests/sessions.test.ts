@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, writeFile, readFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, chmod, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
@@ -12,7 +12,7 @@ import { CodexAgent } from '../server/codex.js';
 import { hostname } from 'node:os';
 
 async function setup() {
-  const temp = await mkdtemp(path.join(tmpdir(), 'pi-hub-sessions-')), root = path.join(temp, 'projects'), workspace = path.join(root, 'work'), agentDir = path.join(temp, 'pi');
+  const temp = await realpath(await mkdtemp(path.join(tmpdir(), 'pi-hub-sessions-'))), root = path.join(temp, 'projects'), workspace = path.join(root, 'work'), agentDir = path.join(temp, 'pi');
   await mkdir(workspace, { recursive: true }); await mkdir(agentDir);
   const env = { PI_CODING_AGENT_DIR: agentDir, PI_CODING_AGENT_SESSION_DIR: undefined, PI_HUB_CODEX_TEST_LEGACY: undefined, PI_HUB_CODEX_TEST_STATUS: undefined, PI_HUB_CODEX_BIN: path.join(temp, 'codex.mjs'), PI_HUB_PI_BIN: path.join(temp, 'pi.mjs'), PI_HUB_CODEX_TEST_LOG: path.join(temp, 'codex.log'), PI_HUB_PI_TEST_LOG: path.join(temp, 'pi.log'), PI_HUB_CODEX_TEST_CWD: workspace };
   const old = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]));

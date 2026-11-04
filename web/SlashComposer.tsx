@@ -70,7 +70,7 @@ export function SlashComposer({ agentId, sessionId, connected, managed, engine =
       </div>
       <div className="command-menu-footer">↑ ↓ navigate · Tab / Enter complete · Esc close{!managed && <span>Extension dialogs may open in your terminal.</span>}</div>
     </div>}
-    <textarea ref={input} aria-label="Message Pi" role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open && chosen ? `${listId}-${Math.min(active, matches.length - 1)}` : undefined}
+    <textarea ref={input} aria-label={engine === 'codex' ? 'Message Codex' : 'Message Pi'} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open && chosen ? `${listId}-${Math.min(active, matches.length - 1)}` : undefined}
       placeholder={placeholder} value={value} onChange={e => { onChange(e.target.value); setCursor(e.target.selectionStart); }} onSelect={e => setCursor(e.currentTarget.selectionStart)}
       onKeyDown={e => {
         if (e.nativeEvent.isComposing || e.keyCode === 229) return;

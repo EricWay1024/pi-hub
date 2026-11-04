@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, symlink, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
@@ -16,7 +16,7 @@ function next(ws: WebSocket, match: (record: any) => boolean) {
   });
 }
 test('realpath confinement rejects siblings and symlink escapes', async () => {
-  const tmp = await mkdtemp(path.join(tmpdir(), 'pi-hub-'));
+  const tmp = await realpath(await mkdtemp(path.join(tmpdir(), 'pi-hub-')));
   try {
     await mkdir(path.join(tmp, 'projects')); await mkdir(path.join(tmp, 'outside'));
     await symlink(path.join(tmp, 'outside'), path.join(tmp, 'projects', 'link'));
