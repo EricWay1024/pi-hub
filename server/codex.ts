@@ -5,6 +5,13 @@ import type { AgentState, RecordData } from '../shared/state.js';
 import { codexMessages } from '../shared/codex.js';
 import { historyPage, mergeMessages, messageKey, MESSAGE_PAGE_SIZE } from '../shared/history.js';
 
+/** Choose only an effort advertised for this model, regardless of catalog ordering. */
+export function highestReasoningEffort(model?: RecordData, fallback = 'medium'): string {
+  const supported = (model?.supportedReasoningEfforts || []).map((entry: RecordData) => entry.reasoningEffort);
+  return ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none'].find(level => supported.includes(level))
+    || model?.defaultReasoningEffort || fallback;
+}
+
 /** One private stdio app-server per Hub-owned agent. Never touches the shared daemon. */
 export class CodexAgent {
   private child: ChildProcessWithoutNullStreams;
@@ -86,6 +93,7 @@ export class CodexAgent {
     const models = await this.catalog();
     const model = models.find(m => (m.model || m.id) === this.state.model);
     this.state.thinkingLevels = (model?.supportedReasoningEfforts || []).map((e: RecordData) => e.reasoningEffort);
+    this.state.thinking = highestReasoningEffort(model, this.state.thinking);
     this.state.online = true; this.touch();
   }
   private updateItem(item: RecordData) {
@@ -186,7 +194,7 @@ export class CodexAgent {
         if (!model || c.provider !== 'codex') throw new Error('Unknown Codex model');
         this.state.model = model.model || model.id;
         this.state.thinkingLevels = (model.supportedReasoningEfforts || []).map((e: RecordData) => e.reasoningEffort);
-        this.state.thinking = model.defaultReasoningEffort; this.touch(); return {};
+        this.state.thinking = highestReasoningEffort(model); this.touch(); return {};
       }
       case 'set_thinking_level': {
         if (this.state.busy) throw new Error('Wait until Codex is idle to change reasoning effort');
